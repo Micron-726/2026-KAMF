@@ -71,3 +71,34 @@ export class Calibrator {
     return { progress: Math.min(span / CALIB_HOLD, 0.99), hint: 'STAND STILL', result: null };
   }
 }
+
+export const JUMP_RATIO = 0.15, JUMP_COOLDOWN = 0.5, JUMP_MAX = 1.0;
+
+export class JumpDetector {
+  constructor(cfg = {}) {
+    this.jumpRatio = cfg.JUMP_RATIO ?? JUMP_RATIO;
+    this.cooldown = cfg.JUMP_COOLDOWN ?? JUMP_COOLDOWN;
+    this.maxHold = cfg.JUMP_MAX ?? JUMP_MAX;
+    this.baseline = null;
+    this.prevJump = false;
+    this.jumpSince = null;
+    this.lastJump = -Infinity;
+  }
+  seed(baselineYJump) { this.baseline = baselineYJump; }
+  update(yJump, scale, now) {
+    if (this.baseline == null) this.baseline = yJump;
+    let jumping = (this.baseline - yJump) > this.jumpRatio * scale;
+    if (jumping) {
+      if (this.jumpSince == null) this.jumpSince = now;
+      else if (now - this.jumpSince > this.maxHold) {
+        this.baseline = yJump; this.jumpSince = null; jumping = false;
+      }
+    } else {
+      this.jumpSince = null;
+    }
+    const fired = jumping && !this.prevJump && (now - this.lastJump > this.cooldown);
+    if (fired) this.lastJump = now;
+    this.prevJump = jumping;
+    return { fired, jumping };
+  }
+}

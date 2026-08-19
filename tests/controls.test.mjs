@@ -85,3 +85,38 @@ test('Calibrator: 도중에 움직이면 재시작', () => {
   assert.equal(out.hint, 'STAND STILL');
   assert.equal(out.progress, 0);
 });
+
+import { JumpDetector } from '../booth/controls.mjs';
+
+test('JumpDetector: 기준선 대비 엉덩이 상승 시 1회 발동', () => {
+  const j = new JumpDetector();
+  j.seed(0.6);                 // 선 자세 hipY=0.6
+  const scale = 0.3;           // 문턱 = 0.15*0.3 = 0.045
+  assert.deepEqual(j.update(0.6, scale, 0.0), { fired: false, jumping: false });
+  // hipY 0.5 → 상승 0.1 > 0.045 → 점프
+  const a = j.update(0.5, scale, 0.1);
+  assert.equal(a.jumping, true);
+  assert.equal(a.fired, true);
+  // 유지되는 동안 재발동 안 함(엣지)
+  assert.equal(j.update(0.5, scale, 0.2).fired, false);
+});
+
+test('JumpDetector: 쿨다운 내 재점프는 무시', () => {
+  const j = new JumpDetector();
+  j.seed(0.6);
+  j.update(0.5, 0.3, 0.0);          // fire
+  j.update(0.6, 0.3, 0.1);          // 착지(jumping false)
+  // 쿨다운 0.5s 안(0.3s)에 다시 뛰면 fired=false
+  assert.equal(j.update(0.5, 0.3, 0.3).fired, false);
+  // 쿨다운 지난 뒤(0.7s)엔 다시 발동
+  j.update(0.6, 0.3, 0.6);
+  assert.equal(j.update(0.5, 0.3, 0.7).fired, true);
+});
+
+test('JumpDetector: JUMP_MAX 초과로 갇히면 기준선 리셋', () => {
+  const j = new JumpDetector();
+  j.seed(0.6);
+  j.update(0.5, 0.3, 0.0);          // 점프 시작
+  const a = j.update(0.5, 0.3, 1.2); // 1.2s > JUMP_MAX(1.0) → 리셋
+  assert.equal(a.jumping, false);
+});
