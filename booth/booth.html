@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Subway 모션 부스</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- 게임: same-origin iframe. 플레이 시작 시점에 shell.mjs가 src를 설정해 새로 로드한다
+       (미리 로드해두면 보정 중에도 게임이 백그라운드에서 진행되어버리므로 금지). -->
+  <iframe id="game" title="game" hidden></iframe>
+
+  <!-- 미리보기 캔버스 (보정=전체화면, 플레이=구석) -->
+  <canvas id="preview" width="640" height="480"></canvas>
+  <div id="hint"></div>
+
+  <!-- 화면들 -->
+  <section id="menu" class="screen">
+    <h1>Subway 모션 부스</h1>
+    <button data-go="calibrate">▶ 게임 시작</button>
+    <button data-go="settings">⚙ 설정</button>
+    <button data-go="help">? 도움말</button>
+  </section>
+
+  <section id="settings" class="screen" hidden>
+    <h2>설정</h2>
+    <label>최고 속도 <input id="s-topSpeed" type="range" min="0.1" max="0.8" step="0.05"></label>
+    <label>가속도 <input id="s-accel" type="range" min="0.0001" max="0.002" step="0.0001"></label>
+    <label>좌우 민감도 <input id="s-lane" type="range" min="0.15" max="0.6" step="0.01"></label>
+    <label>점프 강도 <input id="s-jump" type="range" min="0.08" max="0.3" step="0.01"></label>
+    <label>미리보기 위치
+      <select id="s-corner"><option value="br">오른쪽아래</option><option value="bl">왼쪽아래</option>
+      <option value="tr">오른쪽위</option><option value="tl">왼쪽위</option></select></label>
+    <button id="s-reset">기본값으로 초기화</button>
+    <button data-go="menu">← 뒤로</button>
+  </section>
+
+  <section id="help" class="screen" hidden>
+    <h2>도움말</h2>
+    <ul>
+      <li>카메라 정면 2~3m에 서세요(전신이 보이게).</li>
+      <li>"가운데 서세요" 3초 유지 → 보정 완료.</li>
+      <li>좌/우로 한 발 이동 = 칸 이동, 살짝 점프 = 점프.</li>
+      <li>담당자: <b>C</b> 키로 재보정, <b>Esc</b>로 메뉴.</li>
+      <li>데스크톱 게임을 몸으로 하려면 파이썬 도구(개발/motion_control.py)를 쓰세요.</li>
+    </ul>
+    <button data-go="menu">← 뒤로</button>
+  </section>
+
+  <script type="module" src="shell.mjs"></script>
+</body>
+</html>
