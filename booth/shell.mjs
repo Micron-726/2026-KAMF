@@ -3,38 +3,120 @@ import { createPoseEngine } from './pose-engine.mjs';
 import { MotionControls } from './controls.mjs';
 import { makeAdapter } from './adapter.mjs';
 import { drawOverlay } from './overlay.mjs';
-import { loadSettings, saveSettings, defaultSettings, applyGameSpeed, settingsToConfig } from './settings.mjs';
+import { loadSettings, saveSettings, defaultSettings, applySpeed, settingsToConfig } from './settings.mjs';
 
 const $ = (id) => document.getElementById(id);
-const gameFrame = $('game'), preview = $('preview'), hintEl = $('hint');
+const unityContainer = $('unity-container');
+const unityCanvas = $('unity-canvas');
+const preview = $('preview'), hintEl = $('hint');
 const ctx = preview.getContext('2d');
+const calibEl = $('calib'), calibStatus = $('calib-status'), calibRing = document.querySelector('#calib .prog');
+const RING_C = 2 * Math.PI * 90;   // 링 둘레(r=90) — CSS stroke-dasharray와 일치
+
+// 보정 상태 코드(controls.mjs) → 한국어 문구 + 색상 클래스
+const CALIB_MSG = {
+  'STEP INTO VIEW': ['화면 안에 들어와 주세요', 'warn'],
+  'TOO CLOSE': ['너무 가까워요 — 뒤로', 'warn'],
+  'TOO FAR': ['너무 멀어요 — 앞으로', 'warn'],
+  'STAND STILL': ['가만히 서 계세요', 'hold'],
+  'READY': ['완료!', 'ok'],
+  'GO': ['시작!', 'ok'],
+};
+function showCalib(on) { calibEl.hidden = !on; }
+function updateCalib(out) {
+  const [msg, cls] = CALIB_MSG[out.hint] || [out.hint || '준비 중…', 'hold'];
+  calibStatus.textContent = msg;
+  calibStatus.className = cls;
+  const p = Math.max(0, Math.min(1, out.progress || 0));
+  calibRing.style.strokeDashoffset = String(RING_C * (1 - p));
+}
+
+// 플레이 HUD (온스크린 버튼 — Unity 키보드 캡처와 무관하게 클릭으로 동작)
+function showHud(on) { $('hud').hidden = !on; }
+// 재시도: 보정은 유지하고 게임 판만 새로 시작.
+function restartRun() {
+  if (!unity) return;
+  showGameOver(false);
+  unity.SendMessage('BoothBridge', 'Restart');
+  applySpeed(unity, settings);
+}
+
+// ── 점수/목숨/게임오버 (Unity jslib → window 콜백) ──
+const gameoverEl = $('gameover');
+const hudLives = $('hud-lives'), hudCoins = $('hud-coins'), hudScore = $('hud-score'), hudBest = $('hud-best'), goScore = $('go-score');
+function showGameOver(on) { gameoverEl.hidden = !on; }
+window.boothScore = (score, coins) => { hudScore.textContent = score; hudCoins.textContent = coins; };
+window.boothHealth = (hp) => { const h = Math.max(0, Math.min(3, hp | 0)); hudLives.textContent = '♥'.repeat(h) + '♡'.repeat(3 - h); };
+window.boothHighScore = (hs) => { hudBest.textContent = hs; };
+window.boothGameOver = () => { goScore.textContent = hudScore.textContent; showGameOver(true); };
 const storage = window.localStorage;
 
 let settings = loadSettings(storage);
-let engine = null, video = null, controls = null, adapter = null;
+let engine = null, video = null, controls = null;
 let phase = 'menu';         // menu | settings | help | calibrate | play
 let rafId = 0;
+let sessionToken = 0;       // 진행 중이던 startCalibrate() continuation 무효화용
 
-// startCalibrate()는 카메라 권한/PoseLandmarker 로드를 await하는데, 그 사이에
-// 사용자가 Esc(→menu)를 누르면 나중에 이어지는(stale) continuation이 그대로
-// loop()를 또 시작해 RAF 루프가 중복 실행될 수 있다. 진입마다 토큰을 새로
-// 발급하고, 각 await 뒤에 현재 토큰과 비교해 낡은 continuation을 중단한다.
-// toMenu()/stopGame()처럼 진행 중이던 보정을 무효화해야 하는 모든 종료
-// 경로에서 토큰을 증가시킨다.
-let sessionToken = 0;
+// ── Unity WebGL 호스팅 ──
+// 부스 페이지가 직접 Unity 로더를 주입해 캔버스에 인스턴스를 만든다(iframe 아님).
+// 이러면 unityInstance가 이 스코프에 있어 SendMessage가 간단하고, 게임을 재빌드해도
+// game-unity/Build/ 파일만 바뀌면 되며 이 코드는 손댈 필요가 없다.
+const UNITY_BUILD = '../game-unity/Build';
+const UNITY_CONFIG = {
+  dataUrl: UNITY_BUILD + '/ss-webgl.data.gz',
+  frameworkUrl: UNITY_BUILD + '/ss-webgl.framework.js.gz',
+  codeUrl: UNITY_BUILD + '/ss-webgl.wasm.gz',
+  streamingAssetsUrl: '../game-unity/StreamingAssets',
+  companyName: 'DefaultCompany',
+  productName: 'Subway-Surfers-Clone',
+  productVersion: '0.1',
+};
+let unity = null;               // createUnityInstance 결과
+let unityLoaderInjected = false;
+let unityStarting = false;
 
-const gameWin = () => (gameFrame.contentWindow || null);
-adapter = makeAdapter(gameWin);
+const adapter = makeAdapter(() => unity);
+
+function injectUnityLoader() {
+  return new Promise((resolve, reject) => {
+    if (unityLoaderInjected) { resolve(); return; }
+    const s = document.createElement('script');
+    s.src = UNITY_BUILD + '/ss-webgl.loader.js';
+    s.onload = () => { unityLoaderInjected = true; resolve(); };
+    s.onerror = () => reject(new Error('Unity 로더(ss-webgl.loader.js) 로드 실패'));
+    document.body.appendChild(s);
+  });
+}
+
+// 최초 플레이 때 한 번만 Unity 인스턴스를 만든다(수 초 소요). 이후 판 교체는 Restart로.
+async function ensureUnity() {
+  if (unity) return unity;
+  if (unityStarting) return null;
+  unityStarting = true;
+  hintEl.textContent = '게임 불러오는 중…';
+  try {
+    await injectUnityLoader();
+    // createUnityInstance는 로더가 window에 정의하는 전역 함수.
+    unity = await createUnityInstance(unityCanvas, UNITY_CONFIG, () => {});
+    applySpeed(unity, settings);
+    hintEl.textContent = '';
+  } catch (e) {
+    hintEl.textContent = '게임 로드 실패: ' + (e && e.message ? e.message : e);
+  } finally {
+    unityStarting = false;
+  }
+  return unity;
+}
+
+function showUnity(on) {
+  unityContainer.classList.toggle('show', !!on);
+}
 
 function showScreen(name) {
   for (const s of ['menu', 'settings', 'help']) $(s).hidden = (s !== name);
 }
 
-// getUserMedia가 거부(권한 거부/장치 없음 등)되면 예전엔 조용히 검은 화면으로
-// 남았다. 예외가 startCalibrate()까지 unhandled로 새지 않게 여기서 잡고,
-// 화면(hint)에 안내를 띄운 뒤 false를 돌려준다 — 호출자가 이어지는 단계를
-// 진행하지 않도록. showScreen(null) 상태라 메뉴 오버레이에 가려지지 않고
-// hint가 그대로 보인다. Esc는 어느 상태에서든 동작하므로 메뉴 복귀는 그걸로 충분.
+// getUserMedia 거부 시 조용한 검은 화면 대신 안내를 띄우고 false 반환.
 async function ensureCamera() {
   if (video) return true;
   const v = document.createElement('video');
@@ -58,68 +140,43 @@ function setPreviewMode(mode) {
   preview.className = mode === 'full' ? 'full' : `corner ${settings.previewCorner}`;
 }
 
-// 게임은 index.html이 로드되는 즉시 자체적으로 실행을 시작한다(main.js 최상위에서
-// requestAnimationFrame 루프가 바로 돈다). 그래서 메뉴/보정 단계에서 iframe을 미리
-// 띄워두면 플레이어가 화면을 보기도 전에 게임이 진행돼버린다. 이를 막기 위해
-// iframe은 평소엔 src가 비어 있고, 플레이가 시작되는 순간에만 (재)로드해서
-// 매번 완전히 새 게임 상태로 시작하게 한다.
-let pendingLoadHandler = null;
-
-function stopGame() {
-  // 로딩 중(=아직 load 이벤트가 안 온) iframe을 중단시키면 브라우저가 load를
-  // 절대 쏘지 않아 { once:true } 리스너가 영영 안 떨어진다. 재보정을 반복해도
-  // 리스너가 쌓이지 않도록 대기 중이면 직접 떼어준다.
-  if (pendingLoadHandler) { gameFrame.removeEventListener('load', pendingLoadHandler); pendingLoadHandler = null; }
-  gameFrame.removeAttribute('src');
-  sessionToken++;   // 루프를 끊는 종료 경로 — 진행 중이던 startCalibrate()를 무효화
-}
-
-function startGame(onReady) {
-  stopGame();
-  pendingLoadHandler = () => { pendingLoadHandler = null; onReady(); };
-  gameFrame.addEventListener('load', pendingLoadHandler, { once: true });
-  // 캐시된 동일 URL이면 브라우저가 load를 재발화하지 않을 수 있으므로 매번 다른 URL로 로드
-  gameFrame.src = `../game/index.html?boothrun=${Date.now()}`;
-}
-
 async function startCalibrate() {
   const myToken = ++sessionToken;
   phase = 'calibrate';
-  showScreen(null);            // 모든 메뉴 숨김
+  showScreen(null);
   const gotCamera = await ensureCamera();
-  if (myToken !== sessionToken || !gotCamera) return;   // 취소됨(Esc) 또는 카메라 실패
+  if (myToken !== sessionToken || !gotCamera) return;   // 취소(Esc) 또는 카메라 실패
   await ensureEngine();
   if (myToken !== sessionToken) return;
   controls = new MotionControls(settingsToConfig(settings));
-  stopGame();
-  gameFrame.hidden = true;
+  showUnity(false);            // 보정 중엔 카메라 전체화면
   setPreviewMode('full');
+  showCalib(true);
+  showHud(false);
   loop();
 }
 
+// 보정 완료 → 플레이. 최초엔 Unity 인스턴스 생성(자동으로 새 게임 시작),
+// 이후엔 Restart로 새 판 시작.
 function startPlay() {
   phase = 'play';
-  startGame(() => {
-    // 게임 iframe의 load 이벤트 이후(=main.js의 var top_speed/acc 등 전역이
-    // 생성된 이후)에만 속도를 반영할 수 있다.
-    applyGameSpeed(gameWin(), settings);
-    // 코너 전환도 게임이 실제로 보이는 이 시점에 함께 일으킨다 — 미리 옮기면
-    // 게임이 아직 안 보이는 동안 잠깐 검은 화면 + 작은 코너 프리뷰만 보이는
-    // 어색한 틈이 생긴다.
-    setPreviewMode('corner');
-    gameFrame.hidden = false;
-  });
+  showCalib(false);
+  showHud(true);
+  setPreviewMode('corner');
+  showUnity(true);
+  if (unity) {
+    unity.SendMessage('BoothBridge', 'Restart');
+    applySpeed(unity, settings);
+  } else {
+    ensureUnity();             // async 이지만 기다리지 않는다 — 준비되면 loop가 입력을 보냄
+  }
 }
 
-// pose 검출(MediaPipe)은 매 rAF(60fps)마다 돌리면 게임 WebGL 렌더와 경쟁해
-// 부스 PC에서 성능/지연 문제를 일으킬 수 있다. 검출만 ~30fps로 스로틀하고,
-// rAF 자체와 화면 그리기(오버레이)는 풀레이트를 유지한다 — 재사용 프레임에서는
-// 직전 landmarks/out으로 그리기만 한다.
+// pose 검출은 ~30fps로 스로틀(게임 WebGL 렌더와 경쟁 방지). rAF·그리기는 풀레이트.
 const DETECT_INTERVAL_MS = 33;
 let lastDetectAt = -Infinity;
 let lastLandmarks = null;
 let lastOut = { phase: 'calibrating', hint: '', jumping: false };
-let lastGameOver = false;
 
 function loop(t = performance.now()) {
   rafId = requestAnimationFrame(loop);
@@ -131,67 +188,76 @@ function loop(t = performance.now()) {
     lastLandmarks = engine.detect(video, t);
     lastOut = controls.update(lastLandmarks, t / 1000, aspect);
     if (phase === 'calibrate' && lastOut.phase === 'playing') startPlay();
-    if (phase === 'play') {
-      // 게임 전역 var gameover(main.js) 폴링 — 죽은 게임에는 입력을 보내지 않는다.
-      lastGameOver = !!(gameWin() && gameWin().gameover);
-      if (!lastGameOver) adapter.apply(lastOut);
-    }
+    if (phase === 'play') adapter.apply(lastOut);   // unity 미준비면 adapter가 무시
   }
 
-  drawOverlay(ctx, video, lastLandmarks, { hint: lastOut.hint, jumping: lastOut.jumping, phase: lastOut.phase }, settings);
-  if (phase === 'calibrate') hintEl.textContent = lastOut.hint || '';
-  else if (phase === 'play') hintEl.textContent = lastGameOver ? '게임 오버 — 다시 하려면 C' : '';
+  // 캔버스에는 스켈레톤만(영어 상태 텍스트는 그리지 않음 — 보정 링/배지가 대신).
+  drawOverlay(ctx, video, lastLandmarks, { jumping: lastOut.jumping }, settings);
+  if (phase === 'calibrate') updateCalib(lastOut);
+  hintEl.textContent = '';
 }
 
 function toMenu() {
   phase = 'menu';
-  sessionToken++;   // 진행 중이던 startCalibrate() continuation을 무효화
+  sessionToken++;
   cancelAnimationFrame(rafId); rafId = 0;
-  stopGame();
-  gameFrame.hidden = true;
+  showUnity(false);            // Unity 인스턴스는 살려두고 숨기기만(재생성은 비쌈)
+  showCalib(false);
+  showHud(false);
+  showGameOver(false);
   preview.className = '';
   ctx.clearRect(0, 0, preview.width, preview.height);
   hintEl.textContent = '';
-  lastGameOver = false;
   showScreen('menu');
 }
 
 function recalibrateNow() {
-  if (!controls) return;   // 초기 await(ensureCamera/ensureEngine) 완료 전엔 controls가 아직 없다
+  if (!controls) return;       // 초기 await 완료 전엔 controls가 아직 없음
   controls.recalibrate();
   phase = 'calibrate';
-  lastGameOver = false;
-  stopGame();
+  showUnity(false);
   setPreviewMode('full');
-  gameFrame.hidden = true;
+  showCalib(true);
+  showHud(false);
+  showGameOver(false);
 }
 
 // ── 설정 UI 바인딩 ──
-// 슬라이더 input id ↔ settings 키 매핑(리스너 부착·값 채우기 양쪽에서 공용).
-const SETTINGS_FIELD_MAP = { 's-topSpeed': 'topSpeed', 's-accel': 'accel', 's-lane': 'laneSensitivity', 's-jump': 'jumpStrength' };
+const SETTINGS_FIELD_MAP = { 's-gameSpeed': 'gameSpeed', 's-lane': 'laneSensitivity', 's-jump': 'jumpStrength' };
 
-// 리스너 부착은 페이지 초기화 시 딱 1회만 호출한다(설정 초기화 버튼을 누를
-// 때마다 다시 부착하면 addEventListener가 누적돼 입력마다 저장/적용이
-// N배로 중복 실행된다).
+// 슬라이더 옆 숫자값과 채움(--fill) 갱신.
+function updateFieldDisplay(el) {
+  const out = document.getElementById(el.id + '-val');
+  if (out) out.textContent = el.value;
+  const min = parseFloat(el.min), max = parseFloat(el.max);
+  if (Number.isFinite(min) && Number.isFinite(max) && max > min) {
+    el.style.setProperty('--fill', (((parseFloat(el.value) - min) / (max - min)) * 100) + '%');
+  }
+}
+
 function attachSettingsListeners() {
   for (const [id, key] of Object.entries(SETTINGS_FIELD_MAP)) {
     const el = $(id);
-    el.addEventListener('input', () => { settings[key] = parseFloat(el.value); saveSettings(storage, settings); applyGameSpeed(gameWin(), settings); });
+    el.addEventListener('input', () => {
+      settings[key] = parseFloat(el.value);
+      updateFieldDisplay(el);
+      saveSettings(storage, settings);
+      if (key === 'gameSpeed') applySpeed(unity, settings);   // 속도만 게임에 즉시 반영
+      // 좌우 민감도/점프 강도는 다음 보정 때 MotionControls로 반영됨
+    });
   }
   const corner = $('s-corner');
   corner.addEventListener('change', () => { settings.previewCorner = corner.value; saveSettings(storage, settings); });
   $('s-reset').addEventListener('click', () => {
     settings = defaultSettings();
     saveSettings(storage, settings);
-    applyGameSpeed(gameWin(), settings);
+    applySpeed(unity, settings);
     populateSettings();
   });
 }
 
-// 현재 settings 값을 입력 요소들에 채워 넣기만 한다(리스너는 건드리지 않음).
-// 초기 로드 시, 그리고 "기본값으로 초기화" 이후에 호출된다.
 function populateSettings() {
-  for (const [id, key] of Object.entries(SETTINGS_FIELD_MAP)) { $(id).value = settings[key]; }
+  for (const [id, key] of Object.entries(SETTINGS_FIELD_MAP)) { const el = $(id); el.value = settings[key]; updateFieldDisplay(el); }
   $('s-corner').value = settings.previewCorner;
 }
 
@@ -202,6 +268,14 @@ document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click'
   else if (go === 'menu') { showScreen('menu'); phase = 'menu'; }
   else showScreen(go);   // settings | help
 }));
+// HUD 온스크린 버튼(클릭). Unity가 키보드를 잡아도 클릭은 항상 동작한다.
+$('hud-retry').addEventListener('click', restartRun);
+$('hud-recal').addEventListener('click', recalibrateNow);
+$('hud-menu').addEventListener('click', toMenu);
+$('go-retry').addEventListener('click', restartRun);
+$('go-menu').addEventListener('click', toMenu);
+
+// 키보드 단축키(담당자용, 보조). Unity 포커스 시엔 안 먹을 수 있어 HUD 버튼이 기본.
 window.addEventListener('keydown', (e) => {
   if (e.key === 'c' || e.key === 'C') { if (phase === 'play' || phase === 'calibrate') recalibrateNow(); }
   if (e.key === 'Escape') toMenu();

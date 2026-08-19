@@ -3,8 +3,9 @@ const KEY = 'subway-booth:settings';
 
 export function defaultSettings() {
   return {
-    topSpeed: 0.3, startSpeed: 0, accel: 0.0005,
-    laneSensitivity: 0.35, jumpStrength: 0.15,
+    gameSpeed: 20,              // Unity GameManager.GameSpeed (int)로 전달
+    laneSensitivity: 0.35,      // MotionControls LANE_TRIGGER
+    jumpStrength: 0.15,         // MotionControls JUMP_RATIO
     previewCorner: 'br', mirror: true,
   };
 }
@@ -22,11 +23,11 @@ export function saveSettings(storage, s) {
   storage.setItem(KEY, JSON.stringify(s));
 }
 
-export function applyGameSpeed(gameWindow, s) {
-  if (!gameWindow) return;
-  if ('top_speed' in gameWindow) gameWindow.top_speed = s.topSpeed;
-  if ('acc' in gameWindow) gameWindow.acc = s.accel;
-  if ('speed' in gameWindow) gameWindow.speed = s.startSpeed;
+// Unity 인스턴스에 게임 속도를 반영한다. unity가 아직 없으면(로드 전) 조용히 무시.
+export function applySpeed(unity, s) {
+  if (unity && typeof unity.SendMessage === 'function') {
+    unity.SendMessage('BoothBridge', 'SetSpeed', Math.round(s.gameSpeed));
+  }
 }
 
 export function settingsToConfig(s) {

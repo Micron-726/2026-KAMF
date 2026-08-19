@@ -7,45 +7,130 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- 게임: same-origin iframe. 플레이 시작 시점에 shell.mjs가 src를 설정해 새로 로드한다
-       (미리 로드해두면 보정 중에도 게임이 백그라운드에서 진행되어버리므로 금지). -->
-  <iframe id="game" title="game" hidden></iframe>
+  <!-- 게임: Unity WebGL. shell.mjs가 플레이 시점에 로더를 주입해 이 캔버스에 인스턴스를
+       만들고, 조작은 SendMessage("BoothBridge", ...)로 보낸다. -->
+  <div id="unity-container"><canvas id="unity-canvas" tabindex="-1"></canvas></div>
 
   <!-- 미리보기 캔버스 (보정=전체화면, 플레이=구석) -->
   <canvas id="preview" width="640" height="480"></canvas>
   <div id="hint"></div>
 
+  <!-- 보정 안내 오버레이 (보정 단계에만 표시) -->
+  <div id="calib" hidden>
+    <div class="calib-banner">
+      <div class="calib-title">가운데 서주세요</div>
+      <div class="calib-sub">전신이 카메라에 보이게 · 2~3m 거리</div>
+    </div>
+    <div class="calib-center">
+      <svg class="calib-ring" viewBox="0 0 200 200" aria-hidden="true">
+        <circle class="track" cx="100" cy="100" r="90"></circle>
+        <circle class="prog" cx="100" cy="100" r="90"></circle>
+      </svg>
+      <div id="calib-status" class="hold">준비 중…</div>
+    </div>
+  </div>
+
+  <!-- 플레이 중 HUD (점수/목숨 + 조작 버튼 + 힌트) -->
+  <div id="hud" hidden>
+    <div class="hud-stats hud-left">
+      <div class="stat"><span class="stat-label">LIVES</span><span id="hud-lives" class="stat-val hearts">♥♥♥</span></div>
+      <div class="stat"><span class="stat-label">COIN</span><span id="hud-coins" class="stat-val">0</span></div>
+    </div>
+    <div class="hud-stats hud-right">
+      <div class="stat"><span class="stat-label">SCORE</span><span id="hud-score" class="stat-val big">0</span></div>
+      <div class="stat"><span class="stat-label">BEST</span><span id="hud-best" class="stat-val">0</span></div>
+    </div>
+    <div class="hud-hint">🕹 몸 좌우 = 이동 · 점프 = 뛰기</div>
+    <div class="hud-controls">
+      <button class="hud-btn" id="hud-retry">↻ 재시도</button>
+      <button class="hud-btn" id="hud-recal">⟲ 재보정</button>
+      <button class="hud-btn" id="hud-menu">≡ 메뉴</button>
+    </div>
+  </div>
+
+  <!-- 게임 오버 오버레이 -->
+  <div id="gameover" hidden>
+    <div class="card go-card">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">game over</span></div>
+      <div class="body go-body">
+        <div class="go-title">GAME OVER</div>
+        <div class="go-score">SCORE <b id="go-score">0</b></div>
+        <div class="card-actions">
+          <button class="btn btn-primary" id="go-retry">↻ 다시하기</button>
+          <button class="btn" id="go-menu">≡ 메뉴</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- 화면들 -->
-  <section id="menu" class="screen">
-    <h1>Subway 모션 부스</h1>
-    <button data-go="calibrate">▶ 게임 시작</button>
-    <button data-go="settings">⚙ 설정</button>
-    <button data-go="help">? 도움말</button>
+  <section id="menu" class="screen menu-screen">
+    <div class="deco" aria-hidden="true">
+      <span class="glass g1"></span><span class="glass g2"></span>
+      <span class="spark s1">✦</span><span class="spark s2">✧</span><span class="spark s3">✦</span>
+      <span class="cross x1">+</span><span class="cross x2">+</span>
+      <span class="dots d1"></span>
+    </div>
+    <div class="menu-inner">
+      <div class="badge">2026 KAMF · SoC</div>
+      <img class="menu-hero" src="assets/runtime.png" alt="Runtime">
+      <p class="menu-tagline">몸으로 즐기는 지하철 러너 · MOTION RUNNER</p>
+      <div class="menu-buttons">
+        <button class="btn btn-primary" data-go="calibrate">▶ 게임 시작</button>
+        <button class="btn" data-go="settings">⚙ 설정</button>
+        <button class="btn" data-go="help">? 도움말</button>
+      </div>
+    </div>
   </section>
 
-  <section id="settings" class="screen" hidden>
-    <h2>설정</h2>
-    <label>최고 속도 <input id="s-topSpeed" type="range" min="0.1" max="0.8" step="0.05"></label>
-    <label>가속도 <input id="s-accel" type="range" min="0.0001" max="0.002" step="0.0001"></label>
-    <label>좌우 민감도 <input id="s-lane" type="range" min="0.15" max="0.6" step="0.01"></label>
-    <label>점프 강도 <input id="s-jump" type="range" min="0.08" max="0.3" step="0.01"></label>
-    <label>미리보기 위치
-      <select id="s-corner"><option value="br">오른쪽아래</option><option value="bl">왼쪽아래</option>
-      <option value="tr">오른쪽위</option><option value="tl">왼쪽위</option></select></label>
-    <button id="s-reset">기본값으로 초기화</button>
-    <button data-go="menu">← 뒤로</button>
+  <section id="settings" class="screen panel-screen" hidden>
+    <div class="card">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">settings</span></div>
+      <div class="body">
+        <div class="field">
+          <label for="s-gameSpeed">게임 속도</label>
+          <input id="s-gameSpeed" type="range" min="10" max="45" step="1">
+          <output id="s-gameSpeed-val" class="val"></output>
+        </div>
+        <div class="field">
+          <label for="s-lane">좌우 민감도</label>
+          <input id="s-lane" type="range" min="0.15" max="0.6" step="0.01">
+          <output id="s-lane-val" class="val"></output>
+        </div>
+        <div class="field">
+          <label for="s-jump">점프 강도</label>
+          <input id="s-jump" type="range" min="0.08" max="0.3" step="0.01">
+          <output id="s-jump-val" class="val"></output>
+        </div>
+        <div class="field">
+          <label for="s-corner">미리보기 위치</label>
+          <select id="s-corner"><option value="br">오른쪽아래</option><option value="bl">왼쪽아래</option>
+          <option value="tr">오른쪽위</option><option value="tl">왼쪽위</option></select>
+        </div>
+        <div class="card-actions">
+          <button class="btn btn-primary" data-go="calibrate">▶ 게임 시작</button>
+          <button id="s-reset" class="btn">기본값 초기화</button>
+          <button class="btn" data-go="menu">← 뒤로</button>
+        </div>
+      </div>
+    </div>
   </section>
 
-  <section id="help" class="screen" hidden>
-    <h2>도움말</h2>
-    <ul>
-      <li>카메라 정면 2~3m에 서세요(전신이 보이게).</li>
-      <li>"가운데 서세요" 3초 유지 → 보정 완료.</li>
-      <li>좌/우로 한 발 이동 = 칸 이동, 살짝 점프 = 점프.</li>
-      <li>담당자: <b>C</b> 키로 재보정, <b>Esc</b>로 메뉴.</li>
-      <li>데스크톱 게임을 몸으로 하려면 파이썬 도구(개발/motion_control.py)를 쓰세요.</li>
-    </ul>
-    <button data-go="menu">← 뒤로</button>
+  <section id="help" class="screen panel-screen" hidden>
+    <div class="card">
+      <div class="titlebar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="title">help</span></div>
+      <div class="body">
+        <ol class="help-steps">
+          <li><span class="n">1</span> 카메라 정면 <b>2~3m</b>에 서세요 (전신이 보이게)</li>
+          <li><span class="n">2</span> "가운데 서세요" <b>3초</b> 유지 → 보정 완료</li>
+          <li><span class="n">3</span> 좌/우로 한 발 = <b>칸 이동</b>, 살짝 점프 = <b>점프</b></li>
+        </ol>
+        <div class="card-actions">
+          <button class="btn btn-primary" data-go="calibrate">▶ 게임 시작</button>
+          <button class="btn" data-go="menu">← 뒤로</button>
+        </div>
+      </div>
+    </div>
   </section>
 
   <script type="module" src="shell.mjs"></script>
