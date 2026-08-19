@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>pose devtest</title>
+<video id="v" autoplay playsinline muted width="480" height="360"></video>
+<pre id="log">loading…</pre>
+<script type="module">
+  import { createPoseEngine } from './pose-engine.mjs';
+  const v = document.getElementById('v');
+  const log = document.getElementById('log');
+  v.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+  await v.play();
+  const engine = await createPoseEngine();
+  log.textContent = 'engine ready';
+  function loop(t) {
+    const lms = engine.detect(v, t);
+    log.textContent = lms ? `landmarks: ${lms.length} (hip23 y=${lms[23].y.toFixed(3)})` : 'no pose';
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+</script>

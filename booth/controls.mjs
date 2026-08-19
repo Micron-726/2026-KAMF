@@ -1,0 +1,147 @@
+// booth/controls.mjs — motion_control.py --body 이식 (순수 로직)
+export const L_SH = 11, R_SH = 12, L_HIP = 23, R_HIP = 24;
+export const VIS_MIN = 0.3;
+export const LANE_TRIGGER = 0.35, LANE_HYST = 0.12;
+
+const vis = (q) => (q == null || q.visibility == null ? 1 : q.visibility);
+
+export function readingFromLandmarks(landmarks, aspect) {
+  if (!landmarks || landmarks.length < 25) return { ok: false };
+  const ls = landmarks[L_SH], rs = landmarks[R_SH];
+  const lh = landmarks[L_HIP], rh = landmarks[R_HIP];
+  if (!ls || !rs || !lh || !rh) return { ok: false };
+  if (Math.min(vis(ls), vis(rs), vis(lh), vis(rh)) < VIS_MIN) return { ok: false };
+  const hipY = (lh.y + rh.y) / 2;
+  const shY = (ls.y + rs.y) / 2;
+  const rawCx = (lh.x + rh.x) / 2;
+  return {
+    ok: true,
+    cx: 1 - rawCx,                 // 거울 반전: 몸을 왼쪽으로 → 화면 왼쪽
+    yJump: hipY,
+    scale: Math.max(hipY - shY, 1e-3),
+  };
+}
+
+export function fitLane(cx, scaleX, laneTrigger = LANE_TRIGGER, laneHyst = LANE_HYST) {
+  const half = laneTrigger * scaleX;
+  const hyst = laneHyst * scaleX;
+  const center = Math.min(Math.max(cx, half), 1 - half);
+  return { center, half, hyst };
+}
+
+export function laneZone(cx, lane, cur = 1) {
+  const left = lane.center - lane.half;
+  const right = lane.center + lane.half;
+  const lb = left + (cur === 0 ? lane.hyst : -lane.hyst);
+  const rb = right - (cur === 2 ? lane.hyst : -lane.hyst);
+  if (cx < lb) return 0;
+  if (cx > rb) return 2;
+  return 1;
+}
+
+export const CALIB_HOLD = 1.5, CALIB_TOL = 0.20;
+export const SCALE_MIN = 0.10, SCALE_MAX = 0.45;
+
+export class Calibrator {
+  constructor() { this.reset(); }
+  reset() { this.samples = []; }   // 각 항목 [t, cx, yJump, scale]
+
+  _restart(now, r) { this.samples = [[now, r.cx, r.yJump, r.scale]]; }
+
+  update(r, now) {
+    if (!r || !r.ok) { this.samples = []; return { progress: 0, hint: 'STEP INTO VIEW', result: null }; }
+    if (r.scale > SCALE_MAX) { this.samples = []; return { progress: 0, hint: 'TOO CLOSE', result: null }; }
+    if (r.scale < SCALE_MIN) { this.samples = []; return { progress: 0, hint: 'TOO FAR', result: null }; }
+
+    this.samples.push([now, r.cx, r.yJump, r.scale]);
+
+    const tol = CALIB_TOL * r.scale;
+    for (const i of [1, 2, 3]) { // cx, yJump, scale
+      let mn = Infinity, mx = -Infinity;
+      for (const s of this.samples) { if (s[i] < mn) mn = s[i]; if (s[i] > mx) mx = s[i]; }
+      if (mx - mn > tol) { this._restart(now, r); return { progress: 0, hint: 'STAND STILL', result: null }; }
+    }
+
+    const span = now - this.samples[0][0];
+    if (span >= CALIB_HOLD && this.samples.length >= 10) {
+      const n = this.samples.length;
+      const avg = (i) => this.samples.reduce((a, s) => a + s[i], 0) / n;
+      return { progress: 1, hint: 'READY', result: { cx: avg(1), yJump: avg(2), scale: avg(3) } };
+    }
+    return { progress: Math.min(span / CALIB_HOLD, 0.99), hint: 'STAND STILL', result: null };
+  }
+}
+
+export const JUMP_RATIO = 0.15, JUMP_COOLDOWN = 0.5, JUMP_MAX = 1.0;
+
+export class JumpDetector {
+  constructor(cfg = {}) {
+    this.jumpRatio = cfg.JUMP_RATIO ?? JUMP_RATIO;
+    this.cooldown = cfg.JUMP_COOLDOWN ?? JUMP_COOLDOWN;
+    this.maxHold = cfg.JUMP_MAX ?? JUMP_MAX;
+    this.baseline = null;
+    this.prevJump = false;
+    this.jumpSince = null;
+    this.lastJump = -Infinity;
+  }
+  seed(baselineYJump) { this.baseline = baselineYJump; }
+  update(yJump, scale, now) {
+    if (this.baseline == null) this.baseline = yJump;
+    let jumping = (this.baseline - yJump) > this.jumpRatio * scale;
+    if (jumping) {
+      if (this.jumpSince == null) this.jumpSince = now;
+      else if (now - this.jumpSince > this.maxHold) {
+        this.baseline = yJump; this.jumpSince = null; jumping = false;
+      }
+    } else {
+      this.jumpSince = null;
+    }
+    const fired = jumping && !this.prevJump && (now - this.lastJump > this.cooldown);
+    if (fired) this.lastJump = now;
+    this.prevJump = jumping;
+    return { fired, jumping };
+  }
+}
+
+export class MotionControls {
+  constructor(cfg = {}) { this.cfg = cfg; this.reset(); }
+  reset() {
+    this.phase = 'calibrating';
+    this.cal = new Calibrator();
+    this.lane = null;
+    this.jump = null;
+    this.refScale = null;
+    this.curZone = 1;
+  }
+  recalibrate() { this.reset(); }
+
+  update(landmarks, now, aspect) {
+    const r = readingFromLandmarks(landmarks, aspect);
+
+    if (this.phase === 'calibrating') {
+      const { progress, hint, result } = this.cal.update(r, now);
+      if (result) {
+        this.lane = fitLane(result.cx, result.scale / aspect, this.cfg.LANE_TRIGGER ?? LANE_TRIGGER, this.cfg.LANE_HYST ?? LANE_HYST);
+        this.refScale = result.scale;
+        this.jump = new JumpDetector(this.cfg);
+        this.jump.seed(result.yJump);
+        this.curZone = 1;
+        this.phase = 'playing';
+        return { phase: 'playing', progress: 1, hint: 'GO', laneAction: null, steps: 0, jumpAction: false, zone: 1, jumping: false, lost: false };
+      }
+      return { phase: 'calibrating', progress, hint, laneAction: null, steps: 0, jumpAction: false };
+    }
+
+    // playing
+    if (!r.ok) return { phase: 'playing', laneAction: null, steps: 0, jumpAction: false, zone: this.curZone, jumping: false, lost: true };
+    const { fired, jumping } = this.jump.update(r.yJump, this.refScale, now);
+    const zone = laneZone(r.cx, this.lane, this.curZone);
+    let laneAction = null, steps = 0;
+    if (zone !== this.curZone) {
+      laneAction = zone > this.curZone ? 'right' : 'left';
+      steps = Math.abs(zone - this.curZone);
+      this.curZone = zone;
+    }
+    return { phase: 'playing', laneAction, steps, jumpAction: fired, zone, jumping, lost: false };
+  }
+}
