@@ -5,7 +5,7 @@ export function defaultSettings() {
   return {
     topSpeed: 0.3, startSpeed: 0, accel: 0.0005,
     laneSensitivity: 0.35, jumpStrength: 0.15,
-    previewCorner: 'br', previewScale: 1, mirror: true,
+    previewCorner: 'br', mirror: true,
   };
 }
 
@@ -26,6 +26,7 @@ export function applyGameSpeed(gameWindow, s) {
   if (!gameWindow) return;
   if ('top_speed' in gameWindow) gameWindow.top_speed = s.topSpeed;
   if ('acc' in gameWindow) gameWindow.acc = s.accel;
+  if ('speed' in gameWindow) gameWindow.speed = s.startSpeed;
 }
 
 export function settingsToConfig(s) {

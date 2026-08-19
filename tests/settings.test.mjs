@@ -11,6 +11,16 @@ test('loadSettings: 저장 없으면 기본값', () => {
   assert.deepEqual(loadSettings(fakeStorage()), defaultSettings());
 });
 
+test('defaultSettings: 죽은 필드 previewScale은 없음(아무 데서도 안 읽던 필드 제거)', () => {
+  const s = defaultSettings();
+  assert.deepEqual(s, {
+    topSpeed: 0.3, startSpeed: 0, accel: 0.0005,
+    laneSensitivity: 0.35, jumpStrength: 0.15,
+    previewCorner: 'br', mirror: true,
+  });
+  assert.equal('previewScale' in s, false);
+});
+
 test('save→load 왕복', () => {
   const st = fakeStorage();
   const s = { ...defaultSettings(), topSpeed: 0.5 };
@@ -30,6 +40,12 @@ test('applyGameSpeed: 게임 전역 덮어쓰기', () => {
   applyGameSpeed(win, { ...defaultSettings(), topSpeed: 0.6, accel: 0.001 });
   assert.equal(win.top_speed, 0.6);
   assert.equal(win.acc, 0.001);
+});
+
+test('applyGameSpeed: startSpeed → 게임 전역 speed 반영', () => {
+  const win = { top_speed: 0.3, acc: 0.0005, speed: 0 };
+  applyGameSpeed(win, { ...defaultSettings(), startSpeed: 0.1 });
+  assert.equal(win.speed, 0.1);
 });
 
 test('settingsToConfig: 감도→cfg 매핑', () => {
