@@ -15,6 +15,14 @@ let engine = null, video = null, controls = null, adapter = null;
 let phase = 'menu';         // menu | settings | help | calibrate | play
 let rafId = 0;
 
+// startCalibrate()는 카메라 권한/PoseLandmarker 로드를 await하는데, 그 사이에
+// 사용자가 Esc(→menu)를 누르면 나중에 이어지는(stale) continuation이 그대로
+// loop()를 또 시작해 RAF 루프가 중복 실행될 수 있다. 진입마다 토큰을 새로
+// 발급하고, 각 await 뒤에 현재 토큰과 비교해 낡은 continuation을 중단한다.
+// toMenu()/stopGame()처럼 진행 중이던 보정을 무효화해야 하는 모든 종료
+// 경로에서 토큰을 증가시킨다.
+let sessionToken = 0;
+
 const gameWin = () => (gameFrame.contentWindow || null);
 adapter = makeAdapter(gameWin);
 
@@ -51,6 +59,7 @@ function stopGame() {
   // 리스너가 쌓이지 않도록 대기 중이면 직접 떼어준다.
   if (pendingLoadHandler) { gameFrame.removeEventListener('load', pendingLoadHandler); pendingLoadHandler = null; }
   gameFrame.removeAttribute('src');
+  sessionToken++;   // 루프를 끊는 종료 경로 — 진행 중이던 startCalibrate()를 무효화
 }
 
 function startGame(onReady) {
@@ -62,10 +71,13 @@ function startGame(onReady) {
 }
 
 async function startCalibrate() {
+  const myToken = ++sessionToken;
   phase = 'calibrate';
   showScreen(null);            // 모든 메뉴 숨김
   await ensureCamera();
+  if (myToken !== sessionToken) return;   // 대기 중 취소됨(예: Esc) — 낡은 continuation 중단
   await ensureEngine();
+  if (myToken !== sessionToken) return;
   controls = new MotionControls(settingsToConfig(settings));
   stopGame();
   gameFrame.hidden = true;
@@ -98,6 +110,7 @@ function loop(t = performance.now()) {
 
 function toMenu() {
   phase = 'menu';
+  sessionToken++;   // 진행 중이던 startCalibrate() continuation을 무효화
   cancelAnimationFrame(rafId); rafId = 0;
   stopGame();
   gameFrame.hidden = true;
@@ -108,15 +121,32 @@ function toMenu() {
 }
 
 // ── 설정 UI 바인딩 ──
-function bindSettings() {
-  const map = { 's-topSpeed': 'topSpeed', 's-accel': 'accel', 's-lane': 'laneSensitivity', 's-jump': 'jumpStrength' };
-  for (const [id, key] of Object.entries(map)) {
-    const el = $(id); el.value = settings[key];
+// 슬라이더 input id ↔ settings 키 매핑(리스너 부착·값 채우기 양쪽에서 공용).
+const SETTINGS_FIELD_MAP = { 's-topSpeed': 'topSpeed', 's-accel': 'accel', 's-lane': 'laneSensitivity', 's-jump': 'jumpStrength' };
+
+// 리스너 부착은 페이지 초기화 시 딱 1회만 호출한다(설정 초기화 버튼을 누를
+// 때마다 다시 부착하면 addEventListener가 누적돼 입력마다 저장/적용이
+// N배로 중복 실행된다).
+function attachSettingsListeners() {
+  for (const [id, key] of Object.entries(SETTINGS_FIELD_MAP)) {
+    const el = $(id);
     el.addEventListener('input', () => { settings[key] = parseFloat(el.value); saveSettings(storage, settings); applyGameSpeed(gameWin(), settings); });
   }
-  const corner = $('s-corner'); corner.value = settings.previewCorner;
+  const corner = $('s-corner');
   corner.addEventListener('change', () => { settings.previewCorner = corner.value; saveSettings(storage, settings); });
-  $('s-reset').addEventListener('click', () => { settings = defaultSettings(); saveSettings(storage, settings); bindSettings(); });
+  $('s-reset').addEventListener('click', () => {
+    settings = defaultSettings();
+    saveSettings(storage, settings);
+    applyGameSpeed(gameWin(), settings);
+    populateSettings();
+  });
+}
+
+// 현재 settings 값을 입력 요소들에 채워 넣기만 한다(리스너는 건드리지 않음).
+// 초기 로드 시, 그리고 "기본값으로 초기화" 이후에 호출된다.
+function populateSettings() {
+  for (const [id, key] of Object.entries(SETTINGS_FIELD_MAP)) { $(id).value = settings[key]; }
+  $('s-corner').value = settings.previewCorner;
 }
 
 // ── 이벤트 ──
@@ -131,5 +161,6 @@ window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') toMenu();
 });
 
-bindSettings();
+attachSettingsListeners();
+populateSettings();
 showScreen('menu');
