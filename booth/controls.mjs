@@ -22,9 +22,9 @@ export function readingFromLandmarks(landmarks, aspect) {
   };
 }
 
-export function fitLane(cx, scaleX) {
-  const half = LANE_TRIGGER * scaleX;
-  const hyst = LANE_HYST * scaleX;
+export function fitLane(cx, scaleX, laneTrigger = LANE_TRIGGER, laneHyst = LANE_HYST) {
+  const half = laneTrigger * scaleX;
+  const hyst = laneHyst * scaleX;
   const center = Math.min(Math.max(cx, half), 1 - half);
   return { center, half, hyst };
 }
@@ -121,7 +121,7 @@ export class MotionControls {
     if (this.phase === 'calibrating') {
       const { progress, hint, result } = this.cal.update(r, now);
       if (result) {
-        this.lane = fitLane(result.cx, result.scale / aspect);
+        this.lane = fitLane(result.cx, result.scale / aspect, this.cfg.LANE_TRIGGER ?? LANE_TRIGGER, this.cfg.LANE_HYST ?? LANE_HYST);
         this.refScale = result.scale;
         this.jump = new JumpDetector(this.cfg);
         this.jump.seed(result.yJump);

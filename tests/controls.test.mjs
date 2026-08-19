@@ -38,6 +38,12 @@ test('fitLane: half=0.35*scaleX, center는 clamp', () => {
   assert.ok(Math.abs(fitLane(0.0, 0.3).center - 0.105) < 1e-9);
 });
 
+test('fitLane: laneTrigger override로 half가 바뀐다', () => {
+  const lane = fitLane(0.5, 0.3, 0.5);
+  assert.ok(Math.abs(lane.half - 0.15) < 1e-9);   // 0.5*0.3 (기본 0.35 아님)
+  assert.ok(Math.abs(lane.hyst - 0.036) < 1e-9);  // laneHyst 미지정 시 기본값(0.12*0.3) 유지
+});
+
 test('laneZone: 히스테리시스로 경계 떨림 방지', () => {
   const lane = { center: 0.5, half: 0.1, hyst: 0.04 }; // edges 0.4~0.6
   // 중앙(cur=1)에서: 왼쪽 진입은 0.4-0.04=0.36 미만이어야 0
@@ -137,6 +143,13 @@ test('MotionControls: 보정 → 플레이 전환', () => {
   let out;
   for (let i = 0; i <= 20; i++) out = mc.update(still(0.5), i * 0.1, 640 / 480);
   assert.equal(out.phase, 'playing');
+});
+
+test('MotionControls: cfg.LANE_TRIGGER override가 실제 lane.half를 넓힌다', () => {
+  const narrow = new MotionControls();     // 기본 LANE_TRIGGER=0.35
+  const wide = new MotionControls({ LANE_TRIGGER: 0.5 });
+  for (let i = 0; i <= 20; i++) { narrow.update(still(0.5), i * 0.1, 640 / 480); wide.update(still(0.5), i * 0.1, 640 / 480); }
+  assert.ok(wide.lane.half > narrow.lane.half);
 });
 
 test('MotionControls: 보정 후 오른쪽 이동에서 right 액션', () => {
