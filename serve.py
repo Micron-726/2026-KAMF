@@ -4,7 +4,7 @@
 이 서버로 열면 재빌드/설정 없이 그대로 동작한다. 카메라 때문에 반드시 localhost 로 연다.
 
 사용법:
-    cd ~/Downloads/개발/subway-booth
+    cd <이 프로젝트 폴더>
     python3 serve.py            # http://localhost:8000/booth/booth.html
     python3 serve.py 8080       # 포트 바꾸기
 """

@@ -20,9 +20,10 @@
 **A. 배포 zip (권장 — 부스 현장)**
 1. `runtime-booth.zip` 을 부스 PC에 복사 → 압축 풀기
 
-**B. git clone (개발/업데이트)**
+**B. git clone (코드 수정·업데이트 시)**
 ```bash
-git clone <이 저장소 URL>
+git clone https://github.com/legojeon/soc-runtime.git
+cd soc-runtime
 ```
 
 ## 실행
