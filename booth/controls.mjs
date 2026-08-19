@@ -102,3 +102,46 @@ export class JumpDetector {
     return { fired, jumping };
   }
 }
+
+export class MotionControls {
+  constructor(cfg = {}) { this.cfg = cfg; this.reset(); }
+  reset() {
+    this.phase = 'calibrating';
+    this.cal = new Calibrator();
+    this.lane = null;
+    this.jump = null;
+    this.refScale = null;
+    this.curZone = 1;
+  }
+  recalibrate() { this.reset(); }
+
+  update(landmarks, now, aspect) {
+    const r = readingFromLandmarks(landmarks, aspect);
+
+    if (this.phase === 'calibrating') {
+      const { progress, hint, result } = this.cal.update(r, now);
+      if (result) {
+        this.lane = fitLane(result.cx, result.scale / aspect);
+        this.refScale = result.scale;
+        this.jump = new JumpDetector(this.cfg);
+        this.jump.seed(result.yJump);
+        this.curZone = 1;
+        this.phase = 'playing';
+        return { phase: 'playing', progress: 1, hint: 'GO', laneAction: null, steps: 0, jumpAction: false, zone: 1, jumping: false, lost: false };
+      }
+      return { phase: 'calibrating', progress, hint, laneAction: null, steps: 0, jumpAction: false };
+    }
+
+    // playing
+    if (!r.ok) return { phase: 'playing', laneAction: null, steps: 0, jumpAction: false, zone: this.curZone, jumping: false, lost: true };
+    const { fired, jumping } = this.jump.update(r.yJump, this.refScale, now);
+    const zone = laneZone(r.cx, this.lane, this.curZone);
+    let laneAction = null, steps = 0;
+    if (zone !== this.curZone) {
+      laneAction = zone > this.curZone ? 'right' : 'left';
+      steps = Math.abs(zone - this.curZone);
+      this.curZone = zone;
+    }
+    return { phase: 'playing', laneAction, steps, jumpAction: fired, zone, jumping, lost: false };
+  }
+}

@@ -120,3 +120,30 @@ test('JumpDetector: JUMP_MAX 초과로 갇히면 기준선 리셋', () => {
   const a = j.update(0.5, 0.3, 1.2); // 1.2s > JUMP_MAX(1.0) → 리셋
   assert.equal(a.jumping, false);
 });
+
+import { MotionControls } from '../booth/controls.mjs';
+
+function still(cx = 0.5) { // 정지 자세 리딩용 랜드마크
+  const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 1 }));
+  a[11] = { x: 1 - (cx - 0.05), y: 0.3, visibility: 1 };
+  a[12] = { x: 1 - (cx + 0.05), y: 0.3, visibility: 1 };
+  a[23] = { x: 1 - (cx - 0.05), y: 0.6, visibility: 1 };
+  a[24] = { x: 1 - (cx + 0.05), y: 0.6, visibility: 1 };
+  return a;
+}
+
+test('MotionControls: 보정 → 플레이 전환', () => {
+  const mc = new MotionControls();
+  let out;
+  for (let i = 0; i <= 20; i++) out = mc.update(still(0.5), i * 0.1, 640 / 480);
+  assert.equal(out.phase, 'playing');
+});
+
+test('MotionControls: 보정 후 오른쪽 이동에서 right 액션', () => {
+  const mc = new MotionControls();
+  for (let i = 0; i <= 20; i++) mc.update(still(0.5), i * 0.1, 640 / 480);
+  // 크게 오른쪽으로(거울 cx 증가) 이동
+  const out = mc.update(still(0.85), 3.0, 640 / 480);
+  assert.equal(out.laneAction, 'right');
+  assert.equal(out.zone, 2);
+});
