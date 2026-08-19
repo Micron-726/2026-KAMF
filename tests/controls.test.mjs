@@ -129,12 +129,12 @@ test('JumpDetector: JUMP_MAX 초과로 갇히면 기준선 리셋', () => {
 
 import { MotionControls } from '../booth/controls.mjs';
 
-function still(cx = 0.5) { // 정지 자세 리딩용 랜드마크
+function still(cx = 0.5, hipY = 0.6) { // 정지 자세 리딩용 랜드마크(hipY override로 점프 상태 흉내)
   const a = Array.from({ length: 33 }, () => ({ x: 0.5, y: 0.5, visibility: 1 }));
   a[11] = { x: 1 - (cx - 0.05), y: 0.3, visibility: 1 };
   a[12] = { x: 1 - (cx + 0.05), y: 0.3, visibility: 1 };
-  a[23] = { x: 1 - (cx - 0.05), y: 0.6, visibility: 1 };
-  a[24] = { x: 1 - (cx + 0.05), y: 0.6, visibility: 1 };
+  a[23] = { x: 1 - (cx - 0.05), y: hipY, visibility: 1 };
+  a[24] = { x: 1 - (cx + 0.05), y: hipY, visibility: 1 };
   return a;
 }
 
@@ -159,4 +159,30 @@ test('MotionControls: 보정 후 오른쪽 이동에서 right 액션', () => {
   const out = mc.update(still(0.85), 3.0, 640 / 480);
   assert.equal(out.laneAction, 'right');
   assert.equal(out.zone, 2);
+});
+
+test('MotionControls: 보정 후 hip 상승 랜드마크에서 jumpAction:true', () => {
+  const mc = new MotionControls();
+  for (let i = 0; i <= 20; i++) mc.update(still(0.5), i * 0.1, 640 / 480);
+  // hip이 순간 상승(y 감소, 0.6 → 0.5) → 점프 판정
+  const out = mc.update(still(0.5, 0.5), 3.0, 640 / 480);
+  assert.equal(out.jumpAction, true);
+  assert.equal(out.jumping, true);
+});
+
+test('MotionControls: 플레이 중 ok=false 리딩이면 lost:true·laneAction null', () => {
+  const mc = new MotionControls();
+  for (let i = 0; i <= 20; i++) mc.update(still(0.5), i * 0.1, 640 / 480);
+  const out = mc.update(null, 3.0, 640 / 480);   // 랜드마크 소실
+  assert.equal(out.lost, true);
+  assert.equal(out.laneAction, null);
+});
+
+test('MotionControls: 중앙 → 우측 끝 이동 시 zone=2·steps 반영', () => {
+  const mc = new MotionControls();
+  for (let i = 0; i <= 20; i++) mc.update(still(0.5), i * 0.1, 640 / 480);
+  const out = mc.update(still(0.95), 3.0, 640 / 480);   // 우측 끝으로 크게 이동
+  assert.equal(out.zone, 2);
+  assert.equal(out.laneAction, 'right');
+  assert.equal(out.steps, 1);   // curZone 1 → 2
 });
