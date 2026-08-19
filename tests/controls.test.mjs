@@ -48,3 +48,40 @@ test('laneZone: 히스테리시스로 경계 떨림 방지', () => {
   assert.equal(laneZone(0.42, lane, 0), 0);
   assert.equal(laneZone(0.45, lane, 0), 1);
 });
+
+import { Calibrator, CALIB_HOLD } from '../booth/controls.mjs';
+
+test('Calibrator: 화면 밖이면 진행률 0, STEP INTO VIEW', () => {
+  const c = new Calibrator();
+  const out = c.update({ ok: false }, 0);
+  assert.equal(out.progress, 0);
+  assert.equal(out.hint, 'STEP INTO VIEW');
+  assert.equal(out.result, null);
+});
+
+test('Calibrator: 너무 멀거나 가까우면 안내', () => {
+  const c = new Calibrator();
+  assert.equal(c.update({ ok: true, cx: 0.5, yJump: 0.6, scale: 0.05 }, 0).hint, 'TOO FAR');
+  assert.equal(c.update({ ok: true, cx: 0.5, yJump: 0.6, scale: 0.6 }, 0).hint, 'TOO CLOSE');
+});
+
+test('Calibrator: 안정 자세를 CALIB_HOLD 이상 유지하면 READY + 평균', () => {
+  const c = new Calibrator();
+  const still = { ok: true, cx: 0.5, yJump: 0.6, scale: 0.3 };
+  let out;
+  // 0s부터 촘촘히 20프레임(0.1s 간격) → 1.9s 유지
+  for (let i = 0; i <= 20; i++) out = c.update(still, i * 0.1);
+  assert.equal(out.hint, 'READY');
+  assert.ok(out.result);
+  assert.ok(Math.abs(out.result.cx - 0.5) < 1e-9);
+  assert.ok(Math.abs(out.result.scale - 0.3) < 1e-9);
+});
+
+test('Calibrator: 도중에 움직이면 재시작', () => {
+  const c = new Calibrator();
+  c.update({ ok: true, cx: 0.5, yJump: 0.6, scale: 0.3 }, 0.0);
+  // cx가 tol(0.2*0.3=0.06) 넘게 튀면 재시작
+  const out = c.update({ ok: true, cx: 0.7, yJump: 0.6, scale: 0.3 }, 0.1);
+  assert.equal(out.hint, 'STAND STILL');
+  assert.equal(out.progress, 0);
+});

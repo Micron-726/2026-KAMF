@@ -38,3 +38,36 @@ export function laneZone(cx, lane, cur = 1) {
   if (cx > rb) return 2;
   return 1;
 }
+
+export const CALIB_HOLD = 1.5, CALIB_TOL = 0.20;
+export const SCALE_MIN = 0.10, SCALE_MAX = 0.45;
+
+export class Calibrator {
+  constructor() { this.reset(); }
+  reset() { this.samples = []; }   // 각 항목 [t, cx, yJump, scale]
+
+  _restart(now, r) { this.samples = [[now, r.cx, r.yJump, r.scale]]; }
+
+  update(r, now) {
+    if (!r || !r.ok) { this.samples = []; return { progress: 0, hint: 'STEP INTO VIEW', result: null }; }
+    if (r.scale > SCALE_MAX) { this.samples = []; return { progress: 0, hint: 'TOO CLOSE', result: null }; }
+    if (r.scale < SCALE_MIN) { this.samples = []; return { progress: 0, hint: 'TOO FAR', result: null }; }
+
+    this.samples.push([now, r.cx, r.yJump, r.scale]);
+
+    const tol = CALIB_TOL * r.scale;
+    for (const i of [1, 2, 3]) { // cx, yJump, scale
+      let mn = Infinity, mx = -Infinity;
+      for (const s of this.samples) { if (s[i] < mn) mn = s[i]; if (s[i] > mx) mx = s[i]; }
+      if (mx - mn > tol) { this._restart(now, r); return { progress: 0, hint: 'STAND STILL', result: null }; }
+    }
+
+    const span = now - this.samples[0][0];
+    if (span >= CALIB_HOLD && this.samples.length >= 10) {
+      const n = this.samples.length;
+      const avg = (i) => this.samples.reduce((a, s) => a + s[i], 0) / n;
+      return { progress: 1, hint: 'READY', result: { cx: avg(1), yJump: avg(2), scale: avg(3) } };
+    }
+    return { progress: Math.min(span / CALIB_HOLD, 0.99), hint: 'STAND STILL', result: null };
+  }
+}
