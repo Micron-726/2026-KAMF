@@ -1,44 +1,72 @@
-# Subway 모션 부스
+# runtime — 모션 지하철 러너 부스
 
-몸동작(좌/우/점프)으로 즐기는 Unity WebGL Subway Surfers. 학생회 부스용.
-카메라·동작인식(MediaPipe)·게임을 브라우저 한 화면에서 처리한다.
+몸동작(좌/우/점프)으로 즐기는 **Unity WebGL Subway Surfers**. 학생회 이벤트 부스용.
+카메라·동작인식(MediaPipe)·게임을 브라우저 한 화면에서 처리하며, **완전 오프라인**으로 동작합니다.
 
-## 구성
-- `booth/` — 부스 셸(메뉴/보정/플레이 + 모션 인식 + Unity 조작).
-- `game-unity/` — Unity WebGL 빌드(`Build/ss-webgl.*`). Unity 프로젝트를 재빌드하면 이 폴더의 `Build/`만 갈아끼운다.
-- `vendor/` — MediaPipe(오프라인 번들).
-- `serve.py` — Unity `.gz` 파일에 gzip 헤더를 붙이는 로컬 서버.
+<p align="center"><img src="booth/assets/runtime.png" width="360" alt="runtime"></p>
 
-## 실행 (개발/부스 공통)
-1. 이 폴더에서 서버를 켠다:
-   ```
-   python3 serve.py          # 또는 Windows: py serve.py
-   ```
-   > `python -m http.server`는 Unity WebGL의 gzip 파일을 못 띄운다(Content-Encoding 에러). 반드시 `serve.py`로 열 것.
-2. Chrome에서 `http://localhost:8000/booth/booth.html` 접속.
-3. 카메라 권한 허용. `F11`로 전체화면.
-4. "게임 시작" → 가운데 서서 3초 보정 → 플레이.
+---
 
-> `file://` 직접 열기는 카메라·모듈이 막힌다. 반드시 `localhost` 서버로.
-> 완전 오프라인(인터넷 불필요).
+## 필요한 것 (부스 PC)
+- **Python 3** (서버 실행용)
+- **Chrome** (또는 Chromium 계열 브라우저)
+- **웹캠**
 
-## 운영 카드(부스 담당자용)
-- **C** = 재보정 / 새 판 시작(다음 플레이어, 또는 게임이 끝났을 때).
-- **Esc** = 메뉴로 복귀.
-- 설정에서 **게임 속도**·**좌우 민감도**·**점프 강도**·**미리보기 위치** 조정 가능.
+인터넷·추가 설치는 필요 없습니다.
 
-## 배포
-- 이 폴더를 통째로 전달하거나 `git clone` 후 위 "실행"대로.
-- Mac/Windows 동일(브라우저만 있으면 됨). 첫 플레이 때 Unity 로드 수 초 소요.
+## 설치
+아래 둘 중 하나:
 
-## 게임/외형 바꾸기 (나중에)
-- Unity 프로젝트(`../Subway-Surfers-Clone`)에서 캐릭터/장애물 프리팹·모델을 교체하거나 텍스처를 바꾼 뒤,
-  **WebGL로 다시 Build → `game-unity/Build/`에 덮어쓰기**만 하면 된다. 부스 셸/조작 코드는 그대로.
-- 조작·속도 연동은 `BoothBridge`(Unity)와 `booth/adapter.mjs`가 담당하므로 아트를 바꿔도 재통합 불필요.
+**A. 배포 zip (권장 — 부스 현장)**
+1. `runtime-booth.zip` 을 부스 PC에 복사 → 압축 풀기
 
-## 테스트(개발)
-- `npm test` (Node 18+) — 동작판정·어댑터·설정 등 순수 로직 단위 테스트.
+**B. git clone (개발/업데이트)**
+```bash
+git clone <이 저장소 URL>
+```
 
-## 참고: 데스크톱/타 게임
-- 브라우저는 보안상 다른 앱에 키를 못 보낸다. 데스크톱 게임을 몸으로 하려면
-  별도 파이썬 도구(`개발/motion_control.py`)를 사용.
+## 실행
+압축 푼 / clone한 폴더에서:
+```bash
+python3 serve.py        # Windows: py serve.py
+```
+그다음 Chrome에서 접속:
+```
+http://localhost:8000/booth/booth.html
+```
+- 카메라 권한 **허용**, `F11`로 전체화면.
+- ⚠️ 반드시 `serve.py`로 열 것 — `python -m http.server`나 `file://`로 열면 카메라/게임이 안 뜹니다.
+- 첫 플레이 때 게임(Unity) 로딩에 몇 초 걸립니다.
+
+## 플레이 방법
+1. 메뉴에서 **게임 시작**
+2. 카메라 앞 **2~3m**에 전신이 보이게 서고, **가운데서 3초 정지** → 보정 완료
+3. 몸을 **좌/우로 한 발** = 칸 이동, **살짝 점프** = 점프
+4. 코인·점수·목숨은 화면 상단 HUD에 표시, 목숨 다하면 게임오버
+
+## 담당자 조작 (화면 버튼)
+플레이 중 화면 버튼(클릭):
+- **↻ 재시도** — 보정 유지하고 새 판 시작(죽었을 때 빠르게)
+- **⟲ 재보정** — 다음 플레이어용(키·위치 다시 맞춤)
+- **≡ 메뉴** — 시작 화면으로
+
+## 설정
+메뉴 → **설정**에서 실시간 조정:
+- **게임 속도** / **좌우 민감도** / **점프 강도** / **미리보기 위치**
+(값은 브라우저에 저장되어 유지됩니다.)
+
+## 게임 캐릭터·장애물 바꾸기 (선택)
+게임은 Unity 프로젝트(별도)에서 WebGL로 빌드한 결과가 `game-unity/`에 들어있습니다.
+캐릭터/장애물/텍스처를 바꾸려면 Unity에서 교체 후 **WebGL로 다시 Build → `game-unity/Build/`에 덮어쓰기**만 하면 됩니다. 부스 셸·조작 코드는 그대로 재사용됩니다.
+
+## 폴더 구성
+```
+booth/        부스 셸(메뉴/보정/플레이 UI + 동작인식 + Unity 조작)
+game-unity/   Unity WebGL 게임 빌드
+vendor/       MediaPipe(오프라인 번들)
+serve.py      로컬 서버(Unity gzip 헤더 처리)
+tests/        판정 로직 단위 테스트 (npm test / node --test)
+```
+
+## 라이선스 / 크레딧
+[CREDITS.md](CREDITS.md) 참고. 게임은 Ezgi Keserci의 Subway Surfers Clone(MIT), 동작인식은 Google MediaPipe(Apache-2.0)를 사용합니다.
