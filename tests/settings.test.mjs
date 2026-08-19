@@ -37,3 +37,15 @@ test('settingsToConfig: 감도→cfg 매핑', () => {
   assert.equal(cfg.LANE_TRIGGER, 0.4);
   assert.equal(cfg.JUMP_RATIO, 0.2);
 });
+
+test('loadSettings: 파싱 실패 시 기본값', () => {
+  const st = fakeStorage({ 'subway-booth:settings': 'not-json' });
+  assert.deepEqual(loadSettings(st), defaultSettings());
+});
+
+test('applyGameSpeed: 없는 게임 전역은 건드리지 않음', () => {
+  const win = { top_speed: 0.3 };            // acc 없음
+  applyGameSpeed(win, { ...defaultSettings(), topSpeed: 0.6, accel: 0.001 });
+  assert.equal(win.top_speed, 0.6);
+  assert.equal('acc' in win, false);         // 가드가 없으면 acc가 생겨서 실패
+});
