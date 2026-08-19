@@ -30,12 +30,24 @@ function showScreen(name) {
   for (const s of ['menu', 'settings', 'help']) $(s).hidden = (s !== name);
 }
 
+// getUserMedia가 거부(권한 거부/장치 없음 등)되면 예전엔 조용히 검은 화면으로
+// 남았다. 예외가 startCalibrate()까지 unhandled로 새지 않게 여기서 잡고,
+// 화면(hint)에 안내를 띄운 뒤 false를 돌려준다 — 호출자가 이어지는 단계를
+// 진행하지 않도록. showScreen(null) 상태라 메뉴 오버레이에 가려지지 않고
+// hint가 그대로 보인다. Esc는 어느 상태에서든 동작하므로 메뉴 복귀는 그걸로 충분.
 async function ensureCamera() {
-  if (video) return;
-  video = document.createElement('video');
-  video.autoplay = true; video.playsInline = true; video.muted = true;
-  video.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
-  await video.play();
+  if (video) return true;
+  const v = document.createElement('video');
+  v.autoplay = true; v.playsInline = true; v.muted = true;
+  try {
+    v.srcObject = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    await v.play();
+  } catch {
+    hintEl.textContent = '카메라 권한이 필요합니다 — 허용 후 새로고침해주세요. (Esc: 메뉴)';
+    return false;
+  }
+  video = v;
+  return true;
 }
 
 async function ensureEngine() {
@@ -74,8 +86,8 @@ async function startCalibrate() {
   const myToken = ++sessionToken;
   phase = 'calibrate';
   showScreen(null);            // 모든 메뉴 숨김
-  await ensureCamera();
-  if (myToken !== sessionToken) return;   // 대기 중 취소됨(예: Esc) — 낡은 continuation 중단
+  const gotCamera = await ensureCamera();
+  if (myToken !== sessionToken || !gotCamera) return;   // 취소됨(Esc) 또는 카메라 실패
   await ensureEngine();
   if (myToken !== sessionToken) return;
   controls = new MotionControls(settingsToConfig(settings));
@@ -87,25 +99,48 @@ async function startCalibrate() {
 
 function startPlay() {
   phase = 'play';
-  setPreviewMode('corner');
   startGame(() => {
     // 게임 iframe의 load 이벤트 이후(=main.js의 var top_speed/acc 등 전역이
     // 생성된 이후)에만 속도를 반영할 수 있다.
     applyGameSpeed(gameWin(), settings);
+    // 코너 전환도 게임이 실제로 보이는 이 시점에 함께 일으킨다 — 미리 옮기면
+    // 게임이 아직 안 보이는 동안 잠깐 검은 화면 + 작은 코너 프리뷰만 보이는
+    // 어색한 틈이 생긴다.
+    setPreviewMode('corner');
     gameFrame.hidden = false;
   });
 }
+
+// pose 검출(MediaPipe)은 매 rAF(60fps)마다 돌리면 게임 WebGL 렌더와 경쟁해
+// 부스 PC에서 성능/지연 문제를 일으킬 수 있다. 검출만 ~30fps로 스로틀하고,
+// rAF 자체와 화면 그리기(오버레이)는 풀레이트를 유지한다 — 재사용 프레임에서는
+// 직전 landmarks/out으로 그리기만 한다.
+const DETECT_INTERVAL_MS = 33;
+let lastDetectAt = -Infinity;
+let lastLandmarks = null;
+let lastOut = { phase: 'calibrating', hint: '', jumping: false };
+let lastGameOver = false;
 
 function loop(t = performance.now()) {
   rafId = requestAnimationFrame(loop);
   if (phase !== 'calibrate' && phase !== 'play') return;
   const aspect = (video.videoWidth || 640) / (video.videoHeight || 480);
-  const lms = engine.detect(video, t);
-  const out = controls.update(lms, t / 1000, aspect);
-  if (phase === 'calibrate' && out.phase === 'playing') startPlay();
-  if (phase === 'play') adapter.apply(out);
-  drawOverlay(ctx, video, lms, { hint: out.hint, jumping: out.jumping, phase: out.phase }, settings);
-  hintEl.textContent = phase === 'calibrate' ? (out.hint || '') : '';
+
+  if (t - lastDetectAt >= DETECT_INTERVAL_MS) {
+    lastDetectAt = t;
+    lastLandmarks = engine.detect(video, t);
+    lastOut = controls.update(lastLandmarks, t / 1000, aspect);
+    if (phase === 'calibrate' && lastOut.phase === 'playing') startPlay();
+    if (phase === 'play') {
+      // 게임 전역 var gameover(main.js) 폴링 — 죽은 게임에는 입력을 보내지 않는다.
+      lastGameOver = !!(gameWin() && gameWin().gameover);
+      if (!lastGameOver) adapter.apply(lastOut);
+    }
+  }
+
+  drawOverlay(ctx, video, lastLandmarks, { hint: lastOut.hint, jumping: lastOut.jumping, phase: lastOut.phase }, settings);
+  if (phase === 'calibrate') hintEl.textContent = lastOut.hint || '';
+  else if (phase === 'play') hintEl.textContent = lastGameOver ? '게임 오버 — 다시 하려면 C' : '';
 }
 
 function toMenu() {
@@ -117,7 +152,18 @@ function toMenu() {
   preview.className = '';
   ctx.clearRect(0, 0, preview.width, preview.height);
   hintEl.textContent = '';
+  lastGameOver = false;
   showScreen('menu');
+}
+
+function recalibrateNow() {
+  if (!controls) return;   // 초기 await(ensureCamera/ensureEngine) 완료 전엔 controls가 아직 없다
+  controls.recalibrate();
+  phase = 'calibrate';
+  lastGameOver = false;
+  stopGame();
+  setPreviewMode('full');
+  gameFrame.hidden = true;
 }
 
 // ── 설정 UI 바인딩 ──
@@ -157,7 +203,7 @@ document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click'
   else showScreen(go);   // settings | help
 }));
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'c' || e.key === 'C') { if (phase === 'play' || phase === 'calibrate') { controls.recalibrate(); phase = 'calibrate'; stopGame(); setPreviewMode('full'); gameFrame.hidden = true; } }
+  if (e.key === 'c' || e.key === 'C') { if (phase === 'play' || phase === 'calibrate') recalibrateNow(); }
   if (e.key === 'Escape') toMenu();
 });
 
