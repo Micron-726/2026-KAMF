@@ -17,10 +17,10 @@
 ## 설치
 아래 둘 중 하나:
 
-**A. 배포 zip (부스 현장)**
+**A. 배포 zip**
 1. [Releases](https://github.com/legojeon/soc-runtime/releases)에서 `soc-runtime.zip` 다운로드 → 압축 풀기 (또는 USB로 부스 PC에 복사)
 
-**B. git clone (코드 수정·업데이트 시)**
+**B. git clone**
 ```bash
 git clone https://github.com/legojeon/soc-runtime.git
 cd soc-runtime
