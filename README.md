@@ -17,8 +17,8 @@
 ## 설치
 아래 둘 중 하나:
 
-**A. 배포 zip (권장 — 부스 현장)**
-1. `runtime-booth.zip` 을 부스 PC에 복사 → 압축 풀기
+**A. 배포 zip (부스 현장)**
+1. [Releases](https://github.com/legojeon/soc-runtime/releases)에서 `soc-runtime.zip` 다운로드 → 압축 풀기 (또는 USB로 부스 PC에 복사)
 
 **B. git clone (코드 수정·업데이트 시)**
 ```bash
