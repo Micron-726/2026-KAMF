@@ -4,6 +4,7 @@ const KEY = 'subway-booth:settings';
 export function defaultSettings() {
   return {
     gameSpeed: 20,              // Unity GameManager.GameSpeed (int)로 전달
+    laneSpeed: 16,              // PlayerController._laneChangeSpeed (좌우 이동 속도)
     laneSensitivity: 0.35,      // MotionControls LANE_TRIGGER
     jumpStrength: 0.15,         // MotionControls JUMP_RATIO
     previewCorner: 'br', mirror: true,
@@ -27,6 +28,7 @@ export function saveSettings(storage, s) {
 export function applySpeed(unity, s) {
   if (unity && typeof unity.SendMessage === 'function') {
     unity.SendMessage('BoothBridge', 'SetSpeed', Math.round(s.gameSpeed));
+    unity.SendMessage('BoothBridge', 'SetLaneSpeed', s.laneSpeed);
   }
 }
 

@@ -4,13 +4,28 @@ import { FilesetResolver, PoseLandmarker } from '../vendor/mediapipe/tasks-visio
 export async function createPoseEngine({
   wasmPath = '../vendor/mediapipe/tasks-vision/wasm',
   modelPath = '../vendor/mediapipe/pose_landmarker_lite.task',
+  delegate = 'GPU',   // GPU(WebGL) 추론 = 지연 대폭 감소. 실패하면 CPU로 자동 폴백.
 } = {}) {
   const fileset = await FilesetResolver.forVisionTasks(wasmPath);
-  const landmarker = await PoseLandmarker.createFromOptions(fileset, {
-    baseOptions: { modelAssetPath: modelPath },
+
+  const build = (dg) => PoseLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: modelPath, delegate: dg },
     runningMode: 'VIDEO',
     numPoses: 1,
   });
+
+  let landmarker;
+  try {
+    landmarker = await build(delegate);
+    console.log('[pose] delegate =', delegate);
+  } catch (e) {
+    if (delegate !== 'CPU') {
+      console.warn('[pose] GPU delegate 실패 → CPU 폴백', e);
+      landmarker = await build('CPU');
+    } else {
+      throw e;
+    }
+  }
   let lastTs = 0;
   return {
     detect(videoEl, timestampMs) {

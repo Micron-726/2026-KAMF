@@ -14,7 +14,7 @@ test('loadSettings: 저장 없으면 기본값', () => {
 test('defaultSettings: Unity 게임속도 기본 필드 구성', () => {
   const s = defaultSettings();
   assert.deepEqual(s, {
-    gameSpeed: 20,
+    gameSpeed: 20, laneSpeed: 16,
     laneSensitivity: 0.35, jumpStrength: 0.15,
     previewCorner: 'br', mirror: true,
   });
@@ -34,11 +34,14 @@ test('loadSettings: 부분 저장값도 기본과 병합', () => {
   assert.equal(s.laneSensitivity, 0.35); // 기본 유지
 });
 
-test('applySpeed: Unity에 SetSpeed(정수) 전송', () => {
+test('applySpeed: Unity에 SetSpeed(정수)+SetLaneSpeed 전송', () => {
   const calls = [];
   const unity = { SendMessage: (obj, method, arg) => calls.push([obj, method, arg]) };
-  applySpeed(unity, { ...defaultSettings(), gameSpeed: 33.6 });
-  assert.deepEqual(calls, [['BoothBridge', 'SetSpeed', 34]]);  // Math.round
+  applySpeed(unity, { ...defaultSettings(), gameSpeed: 33.6, laneSpeed: 20 });
+  assert.deepEqual(calls, [
+    ['BoothBridge', 'SetSpeed', 34],       // Math.round
+    ['BoothBridge', 'SetLaneSpeed', 20],
+  ]);
 });
 
 test('applySpeed: Unity 없으면 조용히 무시', () => {

@@ -38,7 +38,8 @@ function restartRun() {
   if (!unity) return;
   showGameOver(false);
   unity.SendMessage('BoothBridge', 'Restart');
-  applySpeed(unity, settings);
+  // 씬 리로드로 새 GameManager/Player가 생긴 뒤에 설정(속도류)을 재적용해야 확실히 먹는다.
+  setTimeout(() => { if (unity) applySpeed(unity, settings); }, 300);
 }
 
 // ── 점수/목숨/게임오버 (Unity jslib → window 콜백) ──
@@ -223,7 +224,7 @@ function recalibrateNow() {
 }
 
 // ── 설정 UI 바인딩 ──
-const SETTINGS_FIELD_MAP = { 's-gameSpeed': 'gameSpeed', 's-lane': 'laneSensitivity', 's-jump': 'jumpStrength' };
+const SETTINGS_FIELD_MAP = { 's-gameSpeed': 'gameSpeed', 's-laneSpeed': 'laneSpeed', 's-lane': 'laneSensitivity', 's-jump': 'jumpStrength' };
 
 // 슬라이더 옆 숫자값과 채움(--fill) 갱신.
 function updateFieldDisplay(el) {
@@ -242,7 +243,7 @@ function attachSettingsListeners() {
       settings[key] = parseFloat(el.value);
       updateFieldDisplay(el);
       saveSettings(storage, settings);
-      if (key === 'gameSpeed') applySpeed(unity, settings);   // 속도만 게임에 즉시 반영
+      if (key === 'gameSpeed' || key === 'laneSpeed') applySpeed(unity, settings);   // 속도류만 게임에 즉시 반영
       // 좌우 민감도/점프 강도는 다음 보정 때 MotionControls로 반영됨
     });
   }
