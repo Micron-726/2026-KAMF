@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { defaultSettings, loadSettings, saveSettings, applySpeed, sendSpeed, settingsToConfig } from '../booth/settings.mjs';
+import { defaultSettings, loadSettings, saveSettings, applyLaneSpeed, applySpeed, sendSpeed, settingsToConfig } from '../booth/settings.mjs';
 
 function fakeStorage(init = {}) {
   const m = new Map(Object.entries(init));
@@ -60,6 +60,16 @@ test('sendSpeed: SetSpeed만 정수로 전송', () => {
     ['BoothBridge', 'SetSpeed', 13],
   ]);
   assert.doesNotThrow(() => sendSpeed(null, 5));
+});
+
+test('applyLaneSpeed: 카운트다운 중 게임 속도 없이 좌우 속도만 적용', () => {
+  const calls = [];
+  const unity = { SendMessage: (obj, method, arg) => calls.push([obj, method, arg]) };
+  applyLaneSpeed(unity, { ...defaultSettings(), laneSpeed: 19 });
+  assert.deepEqual(calls, [
+    ['BoothBridge', 'SetLaneSpeed', 19],
+  ]);
+  assert.doesNotThrow(() => applyLaneSpeed(null, defaultSettings()));
 });
 
 // ── 민감도 방향 ──

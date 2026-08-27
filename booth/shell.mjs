@@ -3,7 +3,7 @@ import { createPoseEngine } from './pose-engine.mjs';
 import { MotionControls } from './controls.mjs';
 import { makeAdapter } from './adapter.mjs';
 import { drawOverlay } from './overlay.mjs';
-import { loadSettings, saveSettings, defaultSettings, applySpeed, sendSpeed, settingsToConfig } from './settings.mjs';
+import { loadSettings, saveSettings, defaultSettings, applyLaneSpeed, sendSpeed, settingsToConfig } from './settings.mjs';
 
 const $ = (id) => document.getElementById(id);
 const unityContainer = $('unity-container');
@@ -174,7 +174,10 @@ function ensureUnity() {
     try {
       await injectUnityLoader();
       unity = await createUnityInstance(unityCanvas, UNITY_CONFIG, () => {});
-      applySpeed(unity, settings);
+      // Unity가 로드되자마자 설정 속도로 달리지 않게 카운트다운 상태를 먼저 확정한다.
+      applyLaneSpeed(unity, settings);
+      sendSpeed(unity, 0);
+      lastSentSpeed = 0;
       hintEl.textContent = '';
     } catch (e) {
       hintEl.textContent = '게임 로드 실패: ' + (e && e.message ? e.message : e);
@@ -250,10 +253,7 @@ function stopFrameLoop() {
   if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
 }
 
-// 게임 속도를 맞춘다: 카운트다운 동안 0(정지), 그 뒤 설정 속도.
-// 중간 단계를 거치지 않는 이유 — GameManager.GameSpeed 세터가 호출될 때마다
-// 점수 배율을 건드리므로, 속도는 판당 꼭 필요한 횟수만 보낸다.
-// 시작 직후 "장애물 없는 구간"은 Unity 쪽 GameManager._obstacleGraceSeconds 가 만든다.
+// 게임 속도를 맞춘다: 카운트다운 동안 0(정지), GO가 뜬 순간 설정 속도.
 function updateSpeed() {
   const v = inputGate ? settings.gameSpeed : 0;     // 카운트다운/게임오버 중엔 월드 정지
   currentSpeed = v;
@@ -291,23 +291,24 @@ function resetRunStats() {
 
 async function runCountdown(token) {
   inputGate = false;
-  lastSentSpeed = -1;
+  sendSpeed(unity, 0);
+  lastSentSpeed = 0;
   countdownEl.hidden = false;
   for (let i = 0; i < COUNTDOWN_STEPS.length; i++) {
     const step = COUNTDOWN_STEPS[i];
     if (token !== runToken) { countdownEl.hidden = true; return; }
-    // 처음 한 번, 그리고 Restart 씬 리로드가 끝났을 무렵 한 번만 0을 보낸다.
-    // (GameManager.GameSpeed 세터가 점수 배율을 건드려서 남발하면 안 된다)
-    if (i === 0 || i === 1) { sendSpeed(unity, 0); lastSentSpeed = 0; }
     cdNum.textContent = step;
     cdNum.classList.toggle('go', step === 'GO!');
     retrigger(cdNum, 'pop');
     cdSub.textContent = step === 'GO!' ? '' : '준비!';
+    if (step === 'GO!') {
+      inputGate = true;
+      lastSentSpeed = -1;
+      updateSpeed();             // GO 표시와 같은 순간에 Unity 이동을 시작한다.
+    }
     await sleep(COUNTDOWN_STEP_MS);
   }
   countdownEl.hidden = true;
-  if (token !== runToken) return;
-  inputGate = true;
 }
 
 async function startCalibrate() {
@@ -336,15 +337,24 @@ async function startPlay() {
   showCalib(false);
   showHud(true);
   setPreviewMode('corner');
-  showUnity(true);
+  // 로더가 끝나기 전에는 Unity가 씬 기본 속도로 잠깐 실행될 수 있으므로 숨겨 둔다.
+  // 준비된 뒤 정지 상태에서 새 판을 열고 나서만 화면과 카운트다운을 보여 준다.
+  showUnity(false);
   const token = ++runToken;
   resetRunStats();
-  const firstLoad = !unity;
   const u = await ensureUnity();
   if (token !== runToken || phase !== 'play') return;
   if (u) {
-    if (!firstLoad) u.SendMessage('BoothBridge', 'Restart');   // 최초 로드는 이미 새 판
-    applySpeed(u, settings);
+    // 최초 로드도 새 판으로 되돌린다. 로딩 중 예전 빌드가 움직였더라도 시작 위치가 복원된다.
+    // 재시작 전후 모두 0을 유지하고, 새 빌드의 GameManager 역시 WebGL에서 0으로 부팅한다.
+    sendSpeed(u, 0);
+    u.SendMessage('BoothBridge', 'Restart');
+    applyLaneSpeed(u, settings);
+    sendSpeed(u, 0);
+    lastSentSpeed = 0;
+    showUnity(true);
+  } else {
+    return;
   }
   runCountdown(token);
 }
@@ -355,9 +365,17 @@ function restartRun() {
   showGameOver(false);
   const token = ++runToken;
   resetRunStats();
+  sendSpeed(unity, 0);
+  lastSentSpeed = 0;
   unity.SendMessage('BoothBridge', 'Restart');
   // 씬 리로드로 새 GameManager/Player가 생긴 뒤에 설정을 재적용해야 확실히 먹는다.
-  setTimeout(() => { if (unity && token === runToken) applySpeed(unity, settings); }, 300);
+  setTimeout(() => {
+    if (unity && token === runToken) {
+      applyLaneSpeed(unity, settings);
+      sendSpeed(unity, 0);
+      lastSentSpeed = 0;
+    }
+  }, 300);
   runCountdown(token);
 }
 
@@ -420,8 +438,10 @@ function attachSettingsListeners() {
       updateFieldDisplay(el);
       saveSettings(storage, settings);
       if (key === 'gameSpeed' || key === 'laneSpeed') {
-        applySpeed(unity, settings);
-        lastSentSpeed = Math.round(settings.gameSpeed);   // 속도 램프 로직과 동기
+        applyLaneSpeed(unity, settings);
+        const speed = phase === 'play' && inputGate ? settings.gameSpeed : 0;
+        sendSpeed(unity, speed);
+        lastSentSpeed = Math.round(speed);
       } else if (controls) {
         controls.cfg = settingsToConfig(settings);        // 민감도는 다음 보정부터 적용
       }
@@ -432,8 +452,10 @@ function attachSettingsListeners() {
   $('s-reset').addEventListener('click', () => {
     settings = defaultSettings();
     saveSettings(storage, settings);
-    applySpeed(unity, settings);
-    lastSentSpeed = Math.round(settings.gameSpeed);
+    applyLaneSpeed(unity, settings);
+    const speed = phase === 'play' && inputGate ? settings.gameSpeed : 0;
+    sendSpeed(unity, speed);
+    lastSentSpeed = Math.round(speed);
     if (controls) controls.cfg = settingsToConfig(settings);
     populateSettings();
   });

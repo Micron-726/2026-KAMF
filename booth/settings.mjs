@@ -57,11 +57,17 @@ export function sendSpeed(unity, gameSpeed) {
   if (canSend(unity)) unity.SendMessage('BoothBridge', 'SetSpeed', Math.round(gameSpeed));
 }
 
+// 좌우 이동 속도만 반영한다. 카운트다운 중 게임 속도를 0으로 유지하면서도
+// 플레이어 설정은 미리 적용할 때 사용한다.
+export function applyLaneSpeed(unity, s) {
+  if (canSend(unity)) unity.SendMessage('BoothBridge', 'SetLaneSpeed', s.laneSpeed);
+}
+
 // Unity 인스턴스에 속도 설정을 반영한다. unity가 아직 없으면(로드 전) 조용히 무시.
 export function applySpeed(unity, s) {
   if (!canSend(unity)) return;
   unity.SendMessage('BoothBridge', 'SetSpeed', Math.round(s.gameSpeed));
-  unity.SendMessage('BoothBridge', 'SetLaneSpeed', s.laneSpeed);
+  applyLaneSpeed(unity, s);
 }
 
 export function settingsToConfig(s) {

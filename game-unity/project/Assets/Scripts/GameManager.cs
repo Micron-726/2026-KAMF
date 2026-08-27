@@ -58,22 +58,16 @@ public class GameManager : MonoBehaviour
     private static void BoothGameOver() { }
 #endif
 
-    // ── 부스: 시작 직후 장애물 없는 구간 ──────────────────────────────────
-    // 플레이어가 자세를 잡기 전에 장애물이 닥치지 않도록, 씬 로드 후 이 시간
-    // 동안은 ObstacleCreator 가 장애물을 만들지 않는다(빈 트랙이 지나간다).
-    [Header("부스 시작 유예")]
-    [Tooltip("씬 로드 후 장애물을 만들지 않을 시간(초). 0이면 끔.")]
-    [SerializeField] private float _obstacleGraceSeconds = 4f;
-
-    /// <summary>지금 장애물 생성을 건너뛰어야 하는지.</summary>
-    public bool ObstaclesSuppressed
-    {
-        get { return Time.timeSinceLevelLoad < _obstacleGraceSeconds; }
-    }
-
     private void Awake()
     {
         Instance = this;
+#if UNITY_WEBGL && !UNITY_EDITOR
+        // WebGL 셸의 3·2·1 카운트다운이 GO를 내보내기 전까지는 처음부터 정지한다.
+        // 씬 기본값(10)으로 한 프레임이라도 먼저 달린 뒤 JS가 0을 보내게 두면,
+        // Unity 로딩 직후 앞으로 움직였다가 3에서 멈추는 현상이 생긴다.
+        _gameSpeed = 0;
+        _scoreMultiplier = 1f;
+#endif
     }
 
     private void Start()
