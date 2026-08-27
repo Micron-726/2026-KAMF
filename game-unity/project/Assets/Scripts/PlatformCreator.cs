@@ -18,11 +18,7 @@ public class PlatformCreator : MonoBehaviour
             RemovePlatformFromMovingList(other.gameObject.GetComponent<PlatformController>());
             AddPlatformToMovingList(SelectRandomPlatform());
             _passedPlatformNumber++;
-
-            if (_passedPlatformNumber % 2 == 0)
-            {
-                GameManager.Instance.GameSpeed += 2;
-            }
+            GameManager.Instance.GameSpeed += 3;
         }
     }
 

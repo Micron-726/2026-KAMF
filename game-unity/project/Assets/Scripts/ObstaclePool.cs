@@ -35,10 +35,10 @@ public class ObstaclePool : MonoBehaviour
     //      크기 조정을 꺼도 색은 여전히 사실을 말한다.
     [Header("부스 장애물 튜닝")]
     [Tooltip("끄면 원본 씬 그대로 둔다.")]
-    [SerializeField] private bool _boothObstacleTuning = true;
+    [SerializeField] private bool _boothObstacleTuning = false;
 
     [Tooltip("끄면 높이는 그대로 두고 색만 칠한다.")]
-    [SerializeField] private bool _resizeObstacles = true;
+    [SerializeField] private bool _resizeObstacles = false;
 
     [Tooltip("점프 계산에 더할 여유(m). 실제 플레이가 계산보다 관대하면 여기를 올린다.")]
     [SerializeField] private float _extraClearance = 0.15f;
@@ -65,12 +65,21 @@ public class ObstaclePool : MonoBehaviour
     [SerializeField] private Color _jumpableColor = new Color(0.29f, 0.85f, 0.44f);   // 초록 = 넘어라
     [SerializeField] private Color _blockingColor = new Color(0.95f, 0.27f, 0.33f);   // 빨강 = 피해라
 
+    [Header("점프형 장애물 크기")]
+    [Tooltip("이전에 초록색으로 분류했던 장애물만 Y축으로 조금 낮춘다. 색상은 변경하지 않는다.")]
+    [SerializeField] private bool _shrinkJumpableObstacles = true;
+
+    [Tooltip("원본 세로 크기에 곱할 값. 0.85면 높이를 15% 줄인다.")]
+    [Range(0.5f, 1f)]
+    [SerializeField] private float _jumpableHeightScale = 0.85f;
+
     private MaterialPropertyBlock _mpb;
 
     private void Awake()
     {
         Instance = this;
         RemoveExcludedSurmountableObstacles();
+        if (_shrinkJumpableObstacles) ApplyJumpableObstacleScale();
         if (_boothObstacleTuning) ApplyObstacleTuning();
     }
 
@@ -147,6 +156,39 @@ public class ObstaclePool : MonoBehaviour
             if (!string.IsNullOrEmpty(prefix) && name.StartsWith(prefix)) return true;
         }
         return false;
+    }
+
+    private void ApplyJumpableObstacleScale()
+    {
+        float heightScale = Mathf.Clamp(_jumpableHeightScale, 0.5f, 1f);
+
+        foreach (var obstacle in _nonSurmountableObstacles)
+        {
+            if (obstacle != null && MatchesJumpableName(obstacle.name))
+                ScaleHeightKeepingBase(obstacle, heightScale);
+        }
+
+        // 현재 계단형 풀에는 Tree_Stump만 남아 있다. 제외된 계단과 문은 위에서
+        // 먼저 제거되므로 여기까지 오지 않는다.
+        foreach (var obstacle in _surmountableObstacles)
+        {
+            if (obstacle != null) ScaleHeightKeepingBase(obstacle, heightScale);
+        }
+    }
+
+    private static void ScaleHeightKeepingBase(GameObject obstacle, float heightScale)
+    {
+        if (!TryGetLocalBoundsY(obstacle, out float localMin, out _)) return;
+
+        var tr = obstacle.transform;
+        float oldScaleY = tr.localScale.y;
+        float baseY = tr.localPosition.y + localMin * oldScaleY;
+        float newScaleY = oldScaleY * heightScale;
+
+        tr.localScale = new Vector3(tr.localScale.x, newScaleY, tr.localScale.z);
+        var pos = tr.localPosition;
+        pos.y = baseY - localMin * newScaleY;
+        tr.localPosition = pos;
     }
 
     /// <summary>장애물 윗면의 높이(m). 바닥 기준.</summary>

@@ -3345,6 +3345,10 @@ MonoBehaviour:
   - {fileID: 1921650165}
   _surmountableObstaclesParent: {fileID: 1259344640}
   _nonSurmountableObstaclesParent: {fileID: 1791120266}
+  _boothObstacleTuning: 0
+  _resizeObstacles: 0
+  _shrinkJumpableObstacles: 1
+  _jumpableHeightScale: 0.85
 --- !u!1001 &695802290
 PrefabInstance:
   m_ObjectHideFlags: 0
