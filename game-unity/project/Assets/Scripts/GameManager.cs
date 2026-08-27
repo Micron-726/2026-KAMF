@@ -24,11 +24,17 @@ public class GameManager : MonoBehaviour
         {
             _gameSpeed = value;
             OnGameSpeedChanged?.Invoke(_gameSpeed);
-            _scoreMultiplier *= 1.2f;
-            Debug.Log("The game is speed up!");
+            // 점수 배율은 "현재 속도의 함수"다. 예전에는 세터가 불릴 때마다
+            // _scoreMultiplier *= 1.2f 를 해서, 부스 셸이 속도를 여러 번 보내면
+            // (카운트다운 정지 → 재개처럼) 배율이 기하급수로 부풀었다.
+            // 같은 값을 몇 번 넣어도 결과가 같도록 바꾼다.
+            _scoreMultiplier = 1f + Mathf.Max(0, _gameSpeed) * _speedScoreBonus;
         }
     }
     [SerializeField] private int _gameSpeed;
+
+    [Tooltip("게임 속도 1당 점수 배율 가산치")]
+    [SerializeField] private float _speedScoreBonus = 0.02f;
 
     public int HighScore { get => _highScore; }
     private int _highScore;
@@ -51,6 +57,19 @@ public class GameManager : MonoBehaviour
     private static void BoothHighScore(int hs) { }
     private static void BoothGameOver() { }
 #endif
+
+    // ── 부스: 시작 직후 장애물 없는 구간 ──────────────────────────────────
+    // 플레이어가 자세를 잡기 전에 장애물이 닥치지 않도록, 씬 로드 후 이 시간
+    // 동안은 ObstacleCreator 가 장애물을 만들지 않는다(빈 트랙이 지나간다).
+    [Header("부스 시작 유예")]
+    [Tooltip("씬 로드 후 장애물을 만들지 않을 시간(초). 0이면 끔.")]
+    [SerializeField] private float _obstacleGraceSeconds = 4f;
+
+    /// <summary>지금 장애물 생성을 건너뛰어야 하는지.</summary>
+    public bool ObstaclesSuppressed
+    {
+        get { return Time.timeSinceLevelLoad < _obstacleGraceSeconds; }
+    }
 
     private void Awake()
     {

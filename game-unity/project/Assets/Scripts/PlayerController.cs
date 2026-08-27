@@ -31,6 +31,9 @@ public class PlayerController : MonoBehaviour
     [SerializeField] private float _dyingAnimationDuration;
     [SerializeField] private float _slideDuration;
 
+    /// <summary>부딪힌 뒤 무적으로 있는 시간(초). NubzukiFlash 가 깜빡임 길이를 여기 맞춘다.</summary>
+    public float InvincibleDuration { get { return _flashingAnimationDuration; } }
+
     private PlayerSide _playerSide;
     private PlayerState _playerState;
     private bool _canVulnerable = true;
