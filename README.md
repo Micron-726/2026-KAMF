@@ -72,7 +72,7 @@ http://localhost:8000/booth/booth.html
 - `game-unity/Build/` — 부스가 실제로 실행하는 WebGL 빌드 결과
 
 빌드 환경:
-- **Unity 2022.3.0f1** (LTS) — Unity Hub에서 이 버전으로 열기
+- **Unity 6000.3.7f1** — Unity Hub에서 이 버전으로 열기
 - WebGL Build Support 모듈 필요
 - 주요 패키지: FBX Importer(4.2.1), TextMeshPro(3.0.6) 등 (`Packages/manifest.json`이 자동 복원)
 
@@ -81,6 +81,10 @@ http://localhost:8000/booth/booth.html
 2. 캐릭터/장애물/텍스처/스크립트 수정
 3. **File → Build Settings → WebGL → Build**
 4. 빌드 산출물을 `game-unity/Build/`에 덮어쓰기
+   - 부스 셸은 Unity 기본 출력 이름(`Build.loader.js` / `Build.data.gz` /
+     `Build.framework.js.gz` / `Build.wasm.gz`)을 그대로 읽습니다. **이름을 바꾸거나
+     한 단계 더 깊은 폴더에 넣지 마세요.** 빌드 폴더 이름을 `Build`로 두면 그대로 맞습니다.
+   - 옛 빌드 파일이 남아 있으면 부스가 그쪽을 계속 읽어 새 빌드가 반영되지 않은 것처럼 보입니다.
 
 부스 셸(`booth/`)·조작 코드는 그대로 재사용됩니다. Unity↔셸 연동은 `Assets/Scripts/BoothBridge.cs`(WebGL로 `MoveLeft`/`MoveRight`/`Jump`/`Restart` 수신)를 참고하세요.
 
@@ -106,7 +110,7 @@ http://localhost:8000/booth/booth.html
 booth/            부스 셸(메뉴/보정/플레이 UI + 동작인식 + Unity 조작)
 game-unity/
   ├─ project/   Unity 프로젝트 원본(2022.3.0f1) — 게임 수정용
-  └─ Build/     Unity WebGL 게임 빌드(부스 실행본)
+  └─ Build/     Unity WebGL 게임 빌드(부스 실행본, Build.* 4개 파일)
 vendor/           MediaPipe(오프라인 번들)
 serve.py          로컬 서버(Unity gzip 헤더 + MIME 처리)
 tests/            판정 로직 단위 테스트 (npm test / node --test)

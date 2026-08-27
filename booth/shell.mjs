@@ -136,11 +136,14 @@ function updateHitFx(t, dt) {
 }
 
 // ── Unity WebGL 호스팅 ──────────────────────────────────────────────────
+// 파일 이름은 Unity WebGL 빌드의 기본 출력(빌드 폴더 이름 = Build)을 그대로 쓴다.
+// 예전엔 ss-webgl.* 로 바꿔 넣는 규칙이었는데, 빌드할 때마다 손으로 옮겨 담아야 해서
+// 실제로 어긋났다(새 빌드가 들어와도 부스는 옛 빌드를 계속 읽었다).
 const UNITY_BUILD = '../game-unity/Build';
 const UNITY_CONFIG = {
-  dataUrl: UNITY_BUILD + '/ss-webgl.data.gz',
-  frameworkUrl: UNITY_BUILD + '/ss-webgl.framework.js.gz',
-  codeUrl: UNITY_BUILD + '/ss-webgl.wasm.gz',
+  dataUrl: UNITY_BUILD + '/Build.data.gz',
+  frameworkUrl: UNITY_BUILD + '/Build.framework.js.gz',
+  codeUrl: UNITY_BUILD + '/Build.wasm.gz',
   streamingAssetsUrl: '../game-unity/StreamingAssets',
   companyName: 'DefaultCompany',
   productName: 'Subway-Surfers-Clone',
@@ -156,9 +159,9 @@ function injectUnityLoader() {
   return new Promise((resolve, reject) => {
     if (unityLoaderInjected) { resolve(); return; }
     const s = document.createElement('script');
-    s.src = UNITY_BUILD + '/ss-webgl.loader.js';
+    s.src = UNITY_BUILD + '/Build.loader.js';
     s.onload = () => { unityLoaderInjected = true; resolve(); };
-    s.onerror = () => reject(new Error('Unity 로더(ss-webgl.loader.js) 로드 실패'));
+    s.onerror = () => reject(new Error('Unity 로더(Build.loader.js) 로드 실패'));
     document.body.appendChild(s);
   });
 }
