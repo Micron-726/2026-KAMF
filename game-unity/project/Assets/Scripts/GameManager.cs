@@ -58,9 +58,23 @@ public class GameManager : MonoBehaviour
     private static void BoothGameOver() { }
 #endif
 
+    // ── 부스: 시작 직후 장애물 없는 구간 ──────────────────────────────────
+    // 시간이 아니라 "이동 거리"로 센다. 부스 셸은 3·2·1 카운트다운 동안 속도를 0으로
+    // 묶는데, 시간 기준이면 멈춰 있는 그 3초 동안 유예가 그냥 흘러가 버려서 실제로
+    // 비는 구간이 로딩 시간에 따라 들쭉날쭉했다. 거리로 재면 멈춰 있는 동안은 줄지 않는다.
+    [Header("부스 시작 유예")]
+    [Tooltip("판 시작 후 장애물을 만들지 않을 이동 거리. 0이면 끔.")]
+    [SerializeField] private float _obstacleGraceDistance = 60f;
+
+    private float _graceDistanceLeft;
+
+    /// <summary>지금 장애물 생성을 건너뛰어야 하는지.</summary>
+    public bool ObstaclesSuppressed { get { return _graceDistanceLeft > 0f; } }
+
     private void Awake()
     {
         Instance = this;
+        _graceDistanceLeft = _obstacleGraceDistance;
 #if UNITY_WEBGL && !UNITY_EDITOR
         // WebGL 셸의 3·2·1 카운트다운이 GO를 내보내기 전까지는 처음부터 정지한다.
         // 씬 기본값(10)으로 한 프레임이라도 먼저 달린 뒤 JS가 0을 보내게 두면,
@@ -68,6 +82,12 @@ public class GameManager : MonoBehaviour
         _gameSpeed = 0;
         _scoreMultiplier = 1f;
 #endif
+    }
+
+    private void Update()
+    {
+        // 실제로 앞으로 나아간 만큼만 유예를 소모한다.
+        if (_graceDistanceLeft > 0f) _graceDistanceLeft -= _gameSpeed * Time.deltaTime;
     }
 
     private void Start()

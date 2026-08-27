@@ -81,10 +81,12 @@ http://localhost:8000/booth/booth.html
 2. 캐릭터/장애물/텍스처/스크립트 수정
 3. **File → Build Settings → WebGL → Build**
 4. 빌드 산출물을 `game-unity/Build/`에 덮어쓰기
-   - 부스 셸은 Unity 기본 출력 이름(`Build.loader.js` / `Build.data.gz` /
-     `Build.framework.js.gz` / `Build.wasm.gz`)을 그대로 읽습니다. **이름을 바꾸거나
-     한 단계 더 깊은 폴더에 넣지 마세요.** 빌드 폴더 이름을 `Build`로 두면 그대로 맞습니다.
-   - 옛 빌드 파일이 남아 있으면 부스가 그쪽을 계속 읽어 새 빌드가 반영되지 않은 것처럼 보입니다.
+   - **⚠️ 옛 빌드 파일을 반드시 지우세요.** `game-unity/Build/` 안에는 `*.loader.js`가
+     **하나만** 있어야 합니다. 지금까지 새 빌드가 반영 안 된 사고는 전부 옛 빌드가
+     남아 있어서였습니다 — 에러도 안 나고 게임도 멀쩡히 떠서 알아채기 어렵습니다.
+   - 파일 이름(`game-unity.*` / `Build.*` 등)은 빌드 폴더 이름을 따라가는데,
+     셸이 실제로 있는 로더를 찾아 쓰므로 이름은 맞추지 않아도 됩니다.
+     빌드가 2개 이상이면 브라우저 콘솔에 경고가 뜹니다.
 
 부스 셸(`booth/`)·조작 코드는 그대로 재사용됩니다. Unity↔셸 연동은 `Assets/Scripts/BoothBridge.cs`(WebGL로 `MoveLeft`/`MoveRight`/`Jump`/`Restart` 수신)를 참고하세요.
 
@@ -100,7 +102,9 @@ http://localhost:8000/booth/booth.html
   - `_tallObstacleMinTopY` (기본 2.0) 빨강 장애물의 최소 높이
   - `_resizeObstacles` 끄면 높이는 그대로 두고 색만 칠합니다(색은 여전히 실측 기준이라 정확합니다)
   - `_boothObstacleTuning` 끄면 원본 씬 그대로
-- `GameManager._obstacleGraceSeconds` (기본 4) 시작 직후 장애물이 나오지 않는 시간
+- `GameManager._obstacleGraceDistance` (기본 60) 시작 직후 장애물이 나오지 않는 **이동 거리**.
+  시간이 아니라 거리로 셉니다 — 카운트다운으로 멈춰 있는 동안 유예가 흘러가 버려서
+  실제로 비는 구간이 들쭉날쭉하던 문제를 막기 위해서입니다.
 - `PlayerController._flashingAnimationDuration` (기본 3) 피격 후 무적 시간.
   **바꾸면 `booth/shell.mjs`의 `INVINCIBLE_MS`도 같은 값으로 맞춰야** 화면 테두리 깜박임이 실제 무적과 어긋나지 않습니다.
 - `NubzukiFlash` — 무적 동안 캐릭터 깜박임 속도(`_blinkIntervalStart` → `_blinkIntervalEnd`로 점점 빨라짐)

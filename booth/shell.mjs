@@ -136,32 +136,58 @@ function updateHitFx(t, dt) {
 }
 
 // ── Unity WebGL 호스팅 ──────────────────────────────────────────────────
-// 파일 이름은 Unity WebGL 빌드의 기본 출력(빌드 폴더 이름 = Build)을 그대로 쓴다.
-// 예전엔 ss-webgl.* 로 바꿔 넣는 규칙이었는데, 빌드할 때마다 손으로 옮겨 담아야 해서
-// 실제로 어긋났다(새 빌드가 들어와도 부스는 옛 빌드를 계속 읽었다).
+// Unity WebGL 산출물의 파일 이름은 빌드 폴더 이름을 그대로 따라간다.
+// 지금까지 ss-webgl.* → Build.* → game-unity.* 로 세 번 바뀌었고, 그때마다 셸이
+// 옛 파일을 계속 읽어서 "새로 빌드했는데 반영이 안 된다"가 반복됐다. 옛 빌드가
+// 남아 있으면 에러도 안 나고 게임도 멀쩡히 떠서 제일 알아채기 어려웠다.
+// 그래서 이름을 못 박지 않고, 실제로 있는 로더를 찾아 쓴다.
 const UNITY_BUILD = '../game-unity/Build';
-const UNITY_CONFIG = {
-  dataUrl: UNITY_BUILD + '/Build.data.gz',
-  frameworkUrl: UNITY_BUILD + '/Build.framework.js.gz',
-  codeUrl: UNITY_BUILD + '/Build.wasm.gz',
-  streamingAssetsUrl: '../game-unity/StreamingAssets',
-  companyName: 'DefaultCompany',
-  productName: 'Subway-Surfers-Clone',
-  productVersion: '0.1',
-};
+const UNITY_BUILD_NAMES = ['game-unity', 'Build', 'ss-webgl'];
+
+// 후보 중 실제로 존재하는 것을 찾는다. 둘 이상 있으면 옛 빌드가 안 지워진 것이므로
+// 콘솔에 경고를 남긴다 — 이게 지금까지 반복된 사고의 원인이었다.
+async function resolveBuildName() {
+  const found = [];
+  for (const name of UNITY_BUILD_NAMES) {
+    try {
+      const res = await fetch(`${UNITY_BUILD}/${name}.loader.js`, { method: 'HEAD', cache: 'no-store' });
+      if (res.ok) found.push(name);
+    } catch { /* 다음 후보 */ }
+  }
+  if (found.length === 0) {
+    throw new Error(`Unity 빌드를 찾지 못했습니다 — game-unity/Build/ 안에 <이름>.loader.js 가 있어야 합니다 (찾아본 이름: ${UNITY_BUILD_NAMES.join(', ')})`);
+  }
+  if (found.length > 1) {
+    console.warn(`[booth] game-unity/Build/ 에 빌드가 ${found.length}개 있습니다: ${found.join(', ')}. ` +
+                 `'${found[0]}' 를 씁니다. 옛 빌드를 지우지 않으면 새 빌드가 반영되지 않을 수 있습니다.`);
+  }
+  return found[0];
+}
+
+function unityConfig(name) {
+  return {
+    dataUrl: `${UNITY_BUILD}/${name}.data.gz`,
+    frameworkUrl: `${UNITY_BUILD}/${name}.framework.js.gz`,
+    codeUrl: `${UNITY_BUILD}/${name}.wasm.gz`,
+    streamingAssetsUrl: '../game-unity/StreamingAssets',
+    companyName: 'DefaultCompany',
+    productName: 'Subway-Surfers-Clone',
+    productVersion: '0.1',
+  };
+}
 let unity = null;
 let unityReady = null;          // 진행 중/완료된 로드 Promise (중복 생성 방지)
 let unityLoaderInjected = false;
 
 const adapter = makeAdapter(() => unity);
 
-function injectUnityLoader() {
+function injectUnityLoader(name) {
   return new Promise((resolve, reject) => {
     if (unityLoaderInjected) { resolve(); return; }
     const s = document.createElement('script');
-    s.src = UNITY_BUILD + '/Build.loader.js';
+    s.src = `${UNITY_BUILD}/${name}.loader.js`;
     s.onload = () => { unityLoaderInjected = true; resolve(); };
-    s.onerror = () => reject(new Error('Unity 로더(Build.loader.js) 로드 실패'));
+    s.onerror = () => reject(new Error(`Unity 로더(${name}.loader.js) 로드 실패`));
     document.body.appendChild(s);
   });
 }
@@ -172,8 +198,9 @@ function ensureUnity() {
   unityReady = (async () => {
     hintEl.textContent = '게임 불러오는 중…';
     try {
-      await injectUnityLoader();
-      unity = await createUnityInstance(unityCanvas, UNITY_CONFIG, () => {});
+      const buildName = await resolveBuildName();
+      await injectUnityLoader(buildName);
+      unity = await createUnityInstance(unityCanvas, unityConfig(buildName), () => {});
       // Unity가 로드되자마자 설정 속도로 달리지 않게 카운트다운 상태를 먼저 확정한다.
       applyLaneSpeed(unity, settings);
       sendSpeed(unity, 0);

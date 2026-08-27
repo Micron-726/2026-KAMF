@@ -18,6 +18,15 @@ public class ObstacleCreator : MonoBehaviour
 
     private void OnEnable()
     {
+        // 시작 직후 유예 구간에는 장애물을 만들지 않는다.
+        //
+        // GameManager 가 아직 없으면(스크립트 실행 순서는 보장되지 않아서 이 OnEnable 이
+        // GameManager.Awake 보다 먼저 불릴 수 있다) "유예 중"으로 본다.
+        // 예전에는 반대로 없으면 그냥 만들었는데, 그러면 어떤 스폰 지점은 유예를 지키고
+        // 어떤 지점은 무시해서 장애물이 나왔다 안 나왔다 했다.
+        var gameManager = GameManager.Instance;
+        if (gameManager == null || gameManager.ObstaclesSuppressed) return;
+
         if (_randomObstacle == null)
         {
             _randomObstacle = _obstaclePool.GetRandomObstacle(_obstacleType);
