@@ -56,15 +56,31 @@ http://localhost:8000/booth/booth.html
 - **게임 속도** / **좌우 민감도** / **점프 강도** / **미리보기 위치**
 (값은 브라우저에 저장되어 유지됩니다.)
 
-## 게임 캐릭터·장애물 바꾸기 (선택)
-게임은 Unity 프로젝트(별도)에서 WebGL로 빌드한 결과가 `game-unity/`에 들어있습니다.
-캐릭터/장애물/텍스처를 바꾸려면 Unity에서 교체 후 **WebGL로 다시 Build → `game-unity/Build/`에 덮어쓰기**만 하면 됩니다. 부스 셸·조작 코드는 그대로 재사용됩니다.
+## 게임 수정·다시 빌드하기 (선택)
+게임 소스와 WebGL 빌드가 모두 저장소에 들어있습니다.
+- `game-unity/project/` — Unity 프로젝트 원본 (캐릭터·장애물·조작 로직)
+- `game-unity/Build/` — 부스가 실제로 실행하는 WebGL 빌드 결과
+
+빌드 환경:
+- **Unity 2022.3.0f1** (LTS) — Unity Hub에서 이 버전으로 열기
+- WebGL Build Support 모듈 필요
+- 주요 패키지: FBX Importer(4.2.1), TextMeshPro(3.0.6) 등 (`Packages/manifest.json`이 자동 복원)
+
+수정 순서:
+1. Unity Hub → `game-unity/project/` 폴더 열기 (첫 실행 시 `Library/` 재생성에 시간이 걸립니다)
+2. 캐릭터/장애물/텍스처/스크립트 수정
+3. **File → Build Settings → WebGL → Build**
+4. 빌드 산출물을 `game-unity/Build/`에 덮어쓰기
+
+부스 셸(`booth/`)·조작 코드는 그대로 재사용됩니다. Unity↔셸 연동은 `Assets/Scripts/BoothBridge.cs`(WebGL로 `MoveLeft`/`MoveRight`/`Jump`/`Restart` 수신)를 참고하세요.
 
 ## 폴더 구성
 ```
-booth/        부스 셸(메뉴/보정/플레이 UI + 동작인식 + Unity 조작)
-game-unity/   Unity WebGL 게임 빌드
-vendor/       MediaPipe(오프라인 번들)
+booth/            부스 셸(메뉴/보정/플레이 UI + 동작인식 + Unity 조작)
+game-unity/
+  ├─ project/   Unity 프로젝트 원본(2022.3.0f1) — 게임 수정용
+  └─ Build/     Unity WebGL 게임 빌드(부스 실행본)
+vendor/           MediaPipe(오프라인 번들)
 serve.py      로컬 서버(Unity gzip 헤더 처리)
 tests/        판정 로직 단위 테스트 (npm test / node --test)
 ```
