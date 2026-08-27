@@ -44,6 +44,16 @@ FORCED_TYPES = {
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
+    def end_headers(self):
+        # 모든 응답에 캐시 금지를 붙인다.
+        # 부스는 localhost 에서만 읽으니 캐시로 얻을 게 없는 반면, 캐시가 남으면
+        # 코드를 갱신했는데도 브라우저가 옛 booth.html/shell.mjs 를 그대로 재사용해
+        # "새로 받았는데 이전 버전이 나온다"가 된다. 실제로 그 일이 있었다.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     # 압축 안 된 일반 파일용. .gz 는 send_head 가 따로 처리한다.
     def guess_type(self, path):
         ext = os.path.splitext(str(path))[1].lower()
@@ -51,6 +61,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return FORCED_TYPES[ext]
         return super().guess_type(path)
     def send_head(self):
+        # 브라우저가 If-Modified-Since 를 보내면 기본 구현이 304(변경 없음)를
+        # 돌려주는데, 그러면 캐시 금지를 붙여도 옛 내용이 그대로 쓰인다. 지운다.
+        for header in ("If-Modified-Since", "If-None-Match"):
+            if header in self.headers:
+                del self.headers[header]
+
         path = self.translate_path(self.path)
         if path.endswith(".gz") and os.path.isfile(path):
             base = path[:-3]
@@ -69,7 +85,6 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Encoding", "gzip")
             self.send_header("Content-Length", str(fs.st_size))
-            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             return f
         return super().send_head()
