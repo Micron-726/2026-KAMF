@@ -15,6 +15,15 @@
   <canvas id="preview" width="640" height="480"></canvas>
   <div id="hint"></div>
 
+  <!-- 피격 연출: 붉은 플래시(한 번) + 무적 동안 깜박이는 테두리 -->
+  <div id="fx" hidden><div id="fx-flash"></div><div id="fx-vig"></div></div>
+
+  <!-- 시작 카운트다운 (3·2·1·GO). 이 동안 게임 속도를 0으로 묶어 장애물이 다가오지 않는다. -->
+  <div id="countdown" hidden>
+    <div id="cd-num" class="cd-num">3</div>
+    <div id="cd-sub" class="cd-sub">준비!</div>
+  </div>
+
   <!-- 보정 안내 오버레이 (보정 단계에만 표시) -->
   <div id="calib" hidden>
     <div class="calib-banner">
@@ -37,8 +46,9 @@
       <div class="stat"><span class="stat-label">COIN</span><span id="hud-coins" class="stat-val">0</span></div>
     </div>
     <div class="hud-stats hud-right">
+      <div class="stat"><span class="stat-label">DIST</span><span id="hud-dist" class="stat-val small">0</span></div>
       <div class="stat"><span class="stat-label">SCORE</span><span id="hud-score" class="stat-val big">0</span></div>
-      <div class="stat"><span class="stat-label">BEST</span><span id="hud-best" class="stat-val">0</span></div>
+      <div class="stat"><span class="stat-label">BEST</span><span id="hud-best" class="stat-val small">0</span></div>
     </div>
     <div class="hud-hint">🕹 몸 좌우 = 이동 · 점프 = 뛰기</div>
     <div class="hud-controls">
@@ -98,15 +108,16 @@
           <output id="s-laneSpeed-val" class="val"></output>
         </div>
         <div class="field">
-          <label for="s-lane">좌우 민감도</label>
-          <input id="s-lane" type="range" min="0.15" max="0.6" step="0.01">
-          <output id="s-lane-val" class="val"></output>
+          <label for="s-laneSens">좌우 민감도</label>
+          <input id="s-laneSens" type="range" min="1" max="10" step="1">
+          <output id="s-laneSens-val" class="val"></output>
         </div>
         <div class="field">
-          <label for="s-jump">점프 강도</label>
-          <input id="s-jump" type="range" min="0.08" max="0.3" step="0.01">
-          <output id="s-jump-val" class="val"></output>
+          <label for="s-jumpSens">점프 민감도</label>
+          <input id="s-jumpSens" type="range" min="1" max="10" step="1">
+          <output id="s-jumpSens-val" class="val"></output>
         </div>
+        <p class="field-note">민감도는 <b>오른쪽일수록 조금만 움직여도</b> 반응합니다.</p>
         <div class="field">
           <label for="s-corner">미리보기 위치</label>
           <select id="s-corner"><option value="br">오른쪽아래</option><option value="bl">왼쪽아래</option>
@@ -127,7 +138,7 @@
       <div class="body">
         <ol class="help-steps">
           <li><span class="n">1</span> 카메라 정면 <b>2~3m</b>에 서세요 (전신이 보이게)</li>
-          <li><span class="n">2</span> "가운데 서세요" <b>3초</b> 유지 → 보정 완료</li>
+          <li><span class="n">2</span> "가운데 서세요" <b>약 1.5초</b> 유지 → 보정 완료</li>
           <li><span class="n">3</span> 좌/우로 한 발 = <b>칸 이동</b>, 살짝 점프 = <b>점프</b></li>
         </ol>
         <div class="card-actions">

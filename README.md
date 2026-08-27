@@ -37,13 +37,18 @@ http://localhost:8000/booth/booth.html
 ```
 - 카메라 권한 **허용**, `F11`로 전체화면.
 - ⚠️ 반드시 `serve.py`로 열 것 — `python -m http.server`나 `file://`로 열면 카메라/게임이 안 뜹니다.
+  (`.mjs`를 `text/plain`으로 내보내는 Windows 환경에서는 부스 화면 버튼이 전부 먹통이 됩니다. `serve.py`가 MIME을 직접 지정해 막아줍니다.)
 - 첫 플레이 때 게임(Unity) 로딩에 몇 초 걸립니다.
 
 ## 플레이 방법
 1. 메뉴에서 **게임 시작**
-2. 카메라 앞 **2~3m**에 전신이 보이게 서고, **가운데서 3초 정지** → 보정 완료
-3. 몸을 **좌/우로 한 발** = 칸 이동, **살짝 점프** = 점프
-4. 코인·점수·목숨은 화면 상단 HUD에 표시, 목숨 다하면 게임오버
+2. 카메라 앞 **2~3m**에 전신이 보이게 서고, **가운데서 약 1.5초 정지** → 보정 완료
+3. **3 · 2 · 1 카운트다운** 뒤 시작 (카운트다운 동안 게임은 멈춰 있고, 시작 직후 몇 초는 장애물이 나오지 않습니다)
+4. **초록색 장애물 = 점프로 넘기**, **빨간색 장애물 = 좌우로 피하기**
+5. 몸을 **좌/우로 한 발** = 칸 이동, **살짝 점프** = 점프
+6. 목숨·코인·거리·점수는 화면 상단 HUD에 표시, 목숨 다하면 게임오버
+   - 점수 = **코인 점수 + 거리 점수**
+   - 부딪히면 화면이 흔들리고, 무적(3초) 동안 캐릭터와 화면 테두리가 깜박입니다(끝날수록 빨라짐)
 
 ## 담당자 조작 (화면 버튼)
 플레이 중 화면 버튼(클릭):
@@ -53,8 +58,13 @@ http://localhost:8000/booth/booth.html
 
 ## 설정
 메뉴 → **설정**에서 실시간 조정:
-- **게임 속도** / **좌우 민감도** / **점프 강도** / **미리보기 위치**
-(값은 브라우저에 저장되어 유지됩니다.)
+- **게임 속도** — 게임이 흘러가는 속도
+- **이동 속도** — 칸 사이를 옮겨가는 속도
+- **좌우 민감도** / **점프 민감도** — 1~10. **오른쪽(숫자가 클수록) 조금만 움직여도 반응**합니다.
+- **미리보기 위치** — 플레이 중 카메라 화면이 붙을 구석
+
+값은 브라우저에 저장되어 유지됩니다.
+민감도는 **다음 보정부터** 적용되니, 바꾼 뒤에는 `⟲ 재보정`을 눌러주세요.
 
 ## 게임 수정·다시 빌드하기 (선택)
 게임 소스와 WebGL 빌드가 모두 저장소에 들어있습니다.
@@ -74,6 +84,16 @@ http://localhost:8000/booth/booth.html
 
 부스 셸(`booth/`)·조작 코드는 그대로 재사용됩니다. Unity↔셸 연동은 `Assets/Scripts/BoothBridge.cs`(WebGL로 `MoveLeft`/`MoveRight`/`Jump`/`Restart` 수신)를 참고하세요.
 
+### 게임플레이 조정 지점 (Inspector)
+- `ObstaclePool` — **장애물 난이도/색 구분**
+  - `_lowObstacleTopY` (기본 0.8) 점프로 넘는 장애물 높이. 점프 정점이 약 1.27m(`_jumpForce` 5 / 질량 1 / 중력 9.81)이므로 이보다 충분히 낮아야 합니다.
+  - `_tallObstacleMinTopY` (기본 2.0) 피해야 하는 장애물의 최소 높이
+  - `LowObstacleNames` (스크립트 상수) 어떤 장애물을 "넘는" 쪽으로 볼지. 씬에 장애물을 추가하면 여기도 갱신하세요.
+- `GameManager._obstacleGraceSeconds` (기본 4) 시작 직후 장애물이 나오지 않는 시간
+- `PlayerController._flashingAnimationDuration` (기본 3) 피격 후 무적 시간.
+  **바꾸면 `booth/shell.mjs`의 `INVINCIBLE_MS`도 같은 값으로 맞춰야** 화면 테두리 깜박임이 실제 무적과 어긋나지 않습니다.
+- `NubzukiFlash` — 무적 동안 캐릭터 깜박임 속도(`_blinkIntervalStart` → `_blinkIntervalEnd`로 점점 빨라짐)
+
 ## 폴더 구성
 ```
 booth/            부스 셸(메뉴/보정/플레이 UI + 동작인식 + Unity 조작)
@@ -81,9 +101,15 @@ game-unity/
   ├─ project/   Unity 프로젝트 원본(2022.3.0f1) — 게임 수정용
   └─ Build/     Unity WebGL 게임 빌드(부스 실행본)
 vendor/           MediaPipe(오프라인 번들)
-serve.py      로컬 서버(Unity gzip 헤더 처리)
-tests/        판정 로직 단위 테스트 (npm test / node --test)
+serve.py          로컬 서버(Unity gzip 헤더 + MIME 처리)
+tests/            판정 로직 단위 테스트 (npm test / node --test)
 ```
 
 ## 라이선스 / 크레딧
 [CREDITS.md](CREDITS.md) 참고. 게임은 Ezgi Keserci의 Subway Surfers Clone(MIT), 동작인식은 Google MediaPipe(Apache-2.0)를 사용합니다.
+
+## 테스트
+```bash
+npm test        # 또는 node --test
+```
+`booth/`의 순수 판정 로직(보정·레인·점프·설정 매핑)을 검증합니다. 브라우저나 Unity 없이 돕니다.

@@ -63,23 +63,24 @@ html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family
 #hud-retry { background: linear-gradient(135deg, var(--pw-accent), var(--pw-accent-dk)); border-color: transparent; }
 
 /* HUD 점수/목숨 (배경 없이 큰 글씨 + 강한 그림자로 게임 위에서도 잘 보이게) */
-.hud-stats { position: absolute; top: 2.2vh; display: flex; gap: 3vw; }
+.hud-stats { position: absolute; top: 2vh; display: flex; gap: 2.6vw; align-items: flex-start; }
 .hud-left { left: 2.5vw; }
 .hud-right { right: 2.5vw; }
 .hud-stats .stat { display: flex; flex-direction: column; align-items: center; gap: 1px; }
 .hud-right .stat { align-items: flex-end; }
 .hud-left .stat { align-items: flex-start; }
 .hud-stats .stat-label {
-  font-family: var(--mono); font-size: 1.7vh; font-weight: 700; letter-spacing: .16em; color: #fff;
+  font-family: var(--mono); font-size: 2.1vh; font-weight: 700; letter-spacing: .16em; color: #fff;
   text-shadow: 0 2px 6px rgba(0,0,0,.65);
 }
 .hud-stats .stat-val {
-  font-family: var(--mono); font-weight: 800; font-size: 5vh; line-height: 1; color: #fff;
+  font-family: var(--mono); font-weight: 800; font-size: 7vh; line-height: 1; color: #fff;
   text-shadow: 0 3px 10px rgba(0,0,0,.7), 0 0 2px rgba(0,0,0,.9);
 }
-.hud-stats .stat-val.big { font-size: 6.5vh; }
-.hud-stats .hearts { color: #ff5470; font-size: 5.5vh; letter-spacing: .06em;
-  text-shadow: 0 3px 10px rgba(0,0,0,.55); }
+.hud-stats .stat-val.big { font-size: 10vh; }
+.hud-stats .stat-val.small { font-size: 4.2vh; opacity: .92; }
+.hud-stats .hearts { color: #ff5470; font-size: 8.5vh; letter-spacing: .04em;
+  text-shadow: 0 3px 10px rgba(0,0,0,.55), 0 0 3vh rgba(255,84,112,.45); }
 
 /* 게임 오버 오버레이 */
 #gameover { position: fixed; inset: 0; z-index: 9; display: flex; align-items: center; justify-content: center;
@@ -95,6 +96,8 @@ html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family
 .screen { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
   align-items: center; justify-content: center; gap: 16px; background: rgba(0,0,0,.85); }
 .screen[hidden] { display: none; }
+.field-note { font-family: var(--mono); font-size: 1.6vh; color: #5b6383; margin: -2px 0 6px; }
+.field-note b { color: var(--pw-accent-dk); }
 .screen label { font-size: 3vh; padding: 10px 18px; }
 .screen h1 { font-size: 8vh; } .screen label { display: flex; gap: 10px; align-items: center; }
 
@@ -232,3 +235,61 @@ html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family
   font-family: var(--mono); font-weight: 700; color: #fff; border-radius: 12px;
   background: linear-gradient(135deg, var(--pw-accent), var(--pw-accent-dk)); }
 .help-steps b { color: var(--pw-accent-dk); }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   피격 / 무적 / 카운트다운 연출
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── #2 피격 시 화면 흔들림 ──
+   Unity 캔버스 컨테이너를 통째로 흔든다. 흔드는 동안 scale(1.06)을 유지해야
+   가장자리에 검은 여백이 보이지 않는다. */
+@keyframes hitShake {
+  0%   { transform: translate(0, 0) scale(1.06); }
+  12%  { transform: translate(-2.4%,  1.5%) scale(1.06); }
+  25%  { transform: translate( 2.1%, -1.8%) scale(1.06); }
+  38%  { transform: translate(-1.8%, -1.2%) scale(1.05); }
+  52%  { transform: translate( 1.5%,  1.4%) scale(1.05); }
+  66%  { transform: translate(-1.0%,  0.7%) scale(1.04); }
+  80%  { transform: translate( 0.6%, -0.5%) scale(1.02); }
+  100% { transform: translate(0, 0) scale(1); }
+}
+#unity-container.shake { animation: hitShake .45s cubic-bezier(.36,.07,.19,.97) both; }
+
+/* ── #2/#3 피격 플래시 + 무적 테두리 ── */
+#fx { position: fixed; inset: 0; z-index: 6; pointer-events: none; }
+#fx[hidden] { display: none; }
+#fx-flash { position: absolute; inset: 0; background: #ff2d55; opacity: 0; }
+#fx-flash.on { animation: hitFlash .42s ease-out both; }
+@keyframes hitFlash { 0% { opacity: .5; } 100% { opacity: 0; } }
+
+/* 무적 동안 깜박이는 테두리. 깜박임 속도는 shell.mjs가 opacity를 직접 토글해
+   남은 시간이 줄수록 빨라지게 만든다(CSS 애니메이션 아님). */
+#fx-vig {
+  position: absolute; inset: 0; opacity: 0;
+  box-shadow: inset 0 0 12vh 3.5vh rgba(255,45,85,.8);
+  border: 1vh solid rgba(255,255,255,.85);
+}
+
+/* ── #5 시작 카운트다운 ── */
+#countdown {
+  position: fixed; inset: 0; z-index: 9; pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  background: rgba(10,12,28,.35);
+}
+#countdown[hidden] { display: none; }
+.cd-num {
+  font-family: var(--mono); font-weight: 800; font-size: 32vh; line-height: 1; color: #fff;
+  text-shadow: 0 0 7vh rgba(91,110,232,.95), 0 8px 24px rgba(0,0,0,.65);
+}
+.cd-num.pop { animation: cdPop .55s cubic-bezier(.22,1.4,.36,1) both; }
+@keyframes cdPop {
+  0%   { transform: scale(1.8); opacity: 0; }
+  40%  { opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+.cd-num.go { color: #7dffb0; text-shadow: 0 0 7vh rgba(62,207,122,.95), 0 8px 24px rgba(0,0,0,.65); }
+.cd-sub {
+  font-family: var(--mono); font-size: 2.6vh; font-weight: 700; letter-spacing: .2em;
+  color: #fff; text-shadow: 0 3px 10px rgba(0,0,0,.7); margin-top: 1.5vh;
+}
