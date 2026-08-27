@@ -3299,12 +3299,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _surmountableObstacles:
-  - {fileID: 602211100}
-  - {fileID: 669251521}
-  - {fileID: 714413295}
-  - {fileID: 736071185}
-  - {fileID: 1270882480}
-  - {fileID: 937991648}
   - {fileID: 1278453959}
   - {fileID: 844621199}
   - {fileID: 695802292}

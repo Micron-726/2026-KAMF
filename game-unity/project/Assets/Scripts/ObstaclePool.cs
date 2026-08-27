@@ -12,6 +12,17 @@ public class ObstaclePool : MonoBehaviour
     [SerializeField] private GameObject _surmountableObstaclesParent;
     [SerializeField] private GameObject _nonSurmountableObstaclesParent;
 
+    [Header("등장 제외 장애물")]
+    [Tooltip("이 이름으로 시작하는 계단형 장애물은 풀에서 제거한다. 빈 자리에는 일반 장애물이 대신 나온다.")]
+    [SerializeField] private string[] _excludedSurmountableObstacleNames =
+    {
+        "Stairs",
+        "Wall_Door",
+    };
+
+    // 계단형 스폰 지점이 일반 장애물을 빌려 갔을 때, 원래 풀로 정확히 돌려보내기 위한 기록.
+    private readonly HashSet<GameObject> _borrowedNonSurmountableObstacles = new HashSet<GameObject>();
+
     // ── 부스: 넘을 수 있는 장애물 / 피해야 하는 장애물 색 구분 ───────────────
     // 원래는 40개 장애물이 전부 한 부류로 섞여 나와서, 플레이어가 뛰어야 할지
     // 피해야 할지 판단할 근거가 화면에 전혀 없었다.
@@ -59,7 +70,33 @@ public class ObstaclePool : MonoBehaviour
     private void Awake()
     {
         Instance = this;
+        RemoveExcludedSurmountableObstacles();
         if (_boothObstacleTuning) ApplyObstacleTuning();
+    }
+
+    private void RemoveExcludedSurmountableObstacles()
+    {
+        if (_surmountableObstacles == null) return;
+
+        _surmountableObstacles.RemoveAll(obstacle =>
+        {
+            if (obstacle == null) return true;
+            if (!MatchesAnyPrefix(obstacle.name, _excludedSurmountableObstacleNames)) return false;
+
+            // 씬에는 그대로 두되 풀에서는 제외한다. 비활성 상태라 이후 선택되지 않는다.
+            obstacle.SetActive(false);
+            return true;
+        });
+    }
+
+    private static bool MatchesAnyPrefix(string objectName, string[] prefixes)
+    {
+        if (prefixes == null) return false;
+        foreach (var prefix in prefixes)
+        {
+            if (!string.IsNullOrEmpty(prefix) && objectName.StartsWith(prefix)) return true;
+        }
+        return false;
     }
 
     private void ApplyObstacleTuning()
@@ -195,46 +232,59 @@ public class ObstaclePool : MonoBehaviour
 
     public GameObject GetRandomObstacle(ObstacleType obstacleType)
     {
-        GameObject randomObstacle = null;
-
         if (obstacleType == ObstacleType.Surmountable)
         {
-            while (randomObstacle == null || randomObstacle.activeInHierarchy)
+            GameObject obstacle = TakeRandomAvailableObstacle(_surmountableObstacles);
+            if (obstacle != null) return obstacle;
+
+            // 계단/문을 제외해 계단형 풀이 사용 중이면 일반 장애물로 빈 자리를 채운다.
+            obstacle = TakeRandomAvailableObstacle(_nonSurmountableObstacles);
+            if (obstacle != null)
             {
-                randomObstacle = _surmountableObstacles[Random.Range(0, _surmountableObstacles.Count)];
-                if (randomObstacle != null && !randomObstacle.activeInHierarchy)
-                {
-                    _surmountableObstacles.Remove(randomObstacle);
-                    return randomObstacle;
-                }
+                _borrowedNonSurmountableObstacles.Add(obstacle);
             }
+            return obstacle;
         }
-        else if (obstacleType == ObstacleType.NonSurmountable)
+
+        return TakeRandomAvailableObstacle(_nonSurmountableObstacles);
+    }
+
+    private static GameObject TakeRandomAvailableObstacle(List<GameObject> obstacles)
+    {
+        if (obstacles == null || obstacles.Count == 0) return null;
+
+        // 시작 위치만 무작위로 잡고 목록은 한 번만 순회한다. 사용 가능한 항목이 없어도
+        // 기존 코드처럼 무한 반복하거나 빈 목록에서 Random.Range를 호출하지 않는다.
+        int startIndex = Random.Range(0, obstacles.Count);
+        for (int offset = 0; offset < obstacles.Count; offset++)
         {
-            while (randomObstacle == null || randomObstacle.activeInHierarchy)
+            int index = (startIndex + offset) % obstacles.Count;
+            GameObject obstacle = obstacles[index];
+            if (obstacle != null && !obstacle.activeInHierarchy)
             {
-                randomObstacle = _nonSurmountableObstacles[Random.Range(0, _nonSurmountableObstacles.Count)];
-                if (randomObstacle != null && !randomObstacle.activeInHierarchy)
-                {
-                    _nonSurmountableObstacles.Remove(randomObstacle);
-                    return randomObstacle;
-                }
+                obstacles.RemoveAt(index);
+                return obstacle;
             }
         }
+
         return null;
     }
 
     public void AddObstacleToList(GameObject obstacle, ObstacleType obstacleType)
     {
-        if (obstacleType == ObstacleType.Surmountable)
+        if (obstacle == null) return;
+
+        // 계단형 스폰 지점에 대신 나간 일반 장애물은 반드시 일반 풀로 복귀시킨다.
+        bool borrowedFromNonSurmountable = _borrowedNonSurmountableObstacles.Remove(obstacle);
+        if (obstacleType == ObstacleType.Surmountable && !borrowedFromNonSurmountable)
         {
-            _surmountableObstacles.Add(obstacle);
-            obstacle.SetActive(false);
+            if (!_surmountableObstacles.Contains(obstacle)) _surmountableObstacles.Add(obstacle);
         }
         else
         {
-            _nonSurmountableObstacles.Add(obstacle);
-            obstacle.SetActive(false);
+            if (!_nonSurmountableObstacles.Contains(obstacle)) _nonSurmountableObstacles.Add(obstacle);
         }
+
+        obstacle.SetActive(false);
     }
 }
