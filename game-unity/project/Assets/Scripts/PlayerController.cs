@@ -34,6 +34,30 @@ public class PlayerController : MonoBehaviour
     /// <summary>부딪힌 뒤 무적으로 있는 시간(초). NubzukiFlash 가 깜빡임 길이를 여기 맞춘다.</summary>
     public float InvincibleDuration { get { return _flashingAnimationDuration; } }
 
+    /// <summary>
+    /// 점프해서 넘어갈 수 있는 장애물 윗면의 최대 높이(m).
+    /// 실제 질량·중력·콜라이더에서 계산하므로 Inspector 값을 바꾸면 같이 따라온다.
+    /// ObstaclePool 이 장애물을 초록/빨강으로 나누는 기준으로 쓴다.
+    /// Start() 보다 먼저 불릴 수 있어 캐시 대신 GetComponent 를 그때그때 쓴다.
+    /// </summary>
+    public float JumpClearanceHeight
+    {
+        get
+        {
+            var rb = GetComponent<Rigidbody>();
+            var cc = GetComponent<CapsuleCollider>();
+            float mass = rb != null ? Mathf.Max(rb.mass, 0.0001f) : 1f;
+            float g = Mathf.Max(Mathf.Abs(Physics.gravity.y), 0.0001f);
+
+            float v = _jumpForce / mass;        // ForceMode.Impulse → 속도 변화량
+            float apex = (v * v) / (2f * g);    // 정점까지 올라가는 높이
+
+            // 캡슐 밑면이 발밑에서 떠 있는 만큼은 그대로 여유가 된다.
+            float feet = cc != null ? cc.center.y - cc.height * 0.5f : 0f;
+            return apex + feet;
+        }
+    }
+
     private PlayerSide _playerSide;
     private PlayerState _playerState;
     private bool _canVulnerable = true;

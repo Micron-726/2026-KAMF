@@ -85,10 +85,17 @@ http://localhost:8000/booth/booth.html
 부스 셸(`booth/`)·조작 코드는 그대로 재사용됩니다. Unity↔셸 연동은 `Assets/Scripts/BoothBridge.cs`(WebGL로 `MoveLeft`/`MoveRight`/`Jump`/`Restart` 수신)를 참고하세요.
 
 ### 게임플레이 조정 지점 (Inspector)
-- `ObstaclePool` — **장애물 난이도/색 구분**
-  - `_lowObstacleTopY` (기본 0.8) 점프로 넘는 장애물 높이. 점프 정점이 약 1.27m(`_jumpForce` 5 / 질량 1 / 중력 9.81)이므로 이보다 충분히 낮아야 합니다.
-  - `_tallObstacleMinTopY` (기본 2.0) 피해야 하는 장애물의 최소 높이
-  - `LowObstacleNames` (스크립트 상수) 어떤 장애물을 "넘는" 쪽으로 볼지. 씬에 장애물을 추가하면 여기도 갱신하세요.
+- `ObstaclePool` — **장애물 색 구분 (초록 = 넘기 / 빨강 = 피하기)**
+  색은 이름이 아니라 **크기 조정이 끝난 뒤 실제로 잰 높이**로 정합니다. 기준선도
+  `PlayerController.JumpClearanceHeight`(실제 점프력·질량·중력·콜라이더에서 계산)를 쓰기 때문에,
+  **초록으로 칠해진 장애물은 실제로 넘어간다는 게 보장**됩니다. 아래 값을 바꾸면 색과 높이가 함께 따라옵니다.
+  - `_jumpableObstacleNames` 어떤 장애물을 "넘는" 쪽으로 만들지 (기본: Primitive_Cylander, Tube, Small Car, Crate).
+    씬에 장애물을 추가하면 여기도 갱신하세요.
+  - `_extraClearance` (기본 0.15) 계산 기준선에 더할 여유. **실제 플레이가 계산보다 관대하면 여기를 올리세요.**
+  - `_lowObstacleMargin` (기본 0.35) 초록 장애물을 기준선보다 얼마나 더 낮출지 — 타이밍 여유
+  - `_tallObstacleMinTopY` (기본 2.0) 빨강 장애물의 최소 높이
+  - `_resizeObstacles` 끄면 높이는 그대로 두고 색만 칠합니다(색은 여전히 실측 기준이라 정확합니다)
+  - `_boothObstacleTuning` 끄면 원본 씬 그대로
 - `GameManager._obstacleGraceSeconds` (기본 4) 시작 직후 장애물이 나오지 않는 시간
 - `PlayerController._flashingAnimationDuration` (기본 3) 피격 후 무적 시간.
   **바꾸면 `booth/shell.mjs`의 `INVINCIBLE_MS`도 같은 값으로 맞춰야** 화면 테두리 깜박임이 실제 무적과 어긋나지 않습니다.

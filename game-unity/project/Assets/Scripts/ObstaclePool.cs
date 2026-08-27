@@ -12,34 +12,47 @@ public class ObstaclePool : MonoBehaviour
     [SerializeField] private GameObject _surmountableObstaclesParent;
     [SerializeField] private GameObject _nonSurmountableObstaclesParent;
 
-    // ── 부스: "점프로 넘는 장애물" / "피해야 하는 장애물" 시각 구분 ──────────
-    // 원래 장애물은 전부 같은 부류로 섞여 나왔고, 가장 낮은 것(1.57m)조차
-    // 점프 정점(jumpForce 5 / mass 1 / g 9.81 → 1.27m)보다 높아서 사실상
-    // 점프로 넘을 수 있는 장애물이 하나도 없었다. 그래서 플레이어 입장에선
-    // 뛰어야 하는지 피해야 하는지 판단할 근거가 아예 없었다.
+    // ── 부스: 넘을 수 있는 장애물 / 피해야 하는 장애물 색 구분 ───────────────
+    // 원래는 40개 장애물이 전부 한 부류로 섞여 나와서, 플레이어가 뛰어야 할지
+    // 피해야 할지 판단할 근거가 화면에 전혀 없었다.
     //
-    // 여기서 장애물을 두 부류로 갈라, 넘는 것은 확실히 낮고 초록, 피하는 것은
-    // 확실히 높고 빨강으로 만든다. 씬을 건드리지 않고 실행 시점에 적용하므로
-    // 값만 바꿔가며 바로 확인할 수 있다.
+    // 여기서 두 가지를 한다.
+    //   1) _jumpableObstacleNames 에 든 장애물은 "확실히 넘어지는" 높이로 낮춘다.
+    //   2) 색은 이름이 아니라 **조정이 끝난 뒤 실제로 잰 높이**로 정한다.
+    //      기준선(PlayerController.JumpClearanceHeight)도 실제 질량·중력·점프력에서
+    //      계산한 값이라, 초록으로 칠해진 장애물은 실제로 넘어간다는 게 보장된다.
+    //      크기 조정을 꺼도 색은 여전히 사실을 말한다.
     [Header("부스 장애물 튜닝")]
     [Tooltip("끄면 원본 씬 그대로 둔다.")]
     [SerializeField] private bool _boothObstacleTuning = true;
 
-    [Tooltip("점프로 넘는 장애물의 목표 높이(m). 점프 정점보다 충분히 낮아야 한다.")]
-    [SerializeField] private float _lowObstacleTopY = 0.8f;
+    [Tooltip("끄면 높이는 그대로 두고 색만 칠한다.")]
+    [SerializeField] private bool _resizeObstacles = true;
 
-    [Tooltip("피해야 하는 장애물의 최소 높이(m). 이보다 낮으면 끌어올린다.")]
+    [Tooltip("점프 계산에 더할 여유(m). 실제 플레이가 계산보다 관대하면 여기를 올린다.")]
+    [SerializeField] private float _extraClearance = 0.15f;
+
+    [Tooltip("초록 장애물을 기준선보다 얼마나 더 낮출지(m). 타이밍 여유가 된다.")]
+    [SerializeField] private float _lowObstacleMargin = 0.35f;
+
+    [Tooltip("빨강 장애물의 최소 높이(m). 이보다 낮으면 끌어올려 헷갈리지 않게 한다.")]
     [SerializeField] private float _tallObstacleMinTopY = 2.0f;
 
-    [SerializeField] private Color _lowObstacleColor = new Color(0.29f, 0.85f, 0.44f);   // 초록 = 넘어라
-    [SerializeField] private Color _tallObstacleColor = new Color(0.95f, 0.27f, 0.33f);  // 빨강 = 피해라
+    [Tooltip("PlayerController 를 못 찾았을 때 쓸 기준 높이(m).")]
+    [SerializeField] private float _fallbackClearance = 1.3f;
 
-    // 이름 앞부분이 여기 있으면 "점프로 넘는" 장애물로 본다.
-    // 씬에 장애물을 추가하면 이 목록도 같이 갱신해야 한다.
-    private static readonly string[] LowObstacleNames =
+    [Tooltip("이 이름으로 시작하는 장애물을 '점프로 넘는' 쪽으로 만든다.")]
+    [SerializeField]
+    private string[] _jumpableObstacleNames =
     {
-        "Crate", "Buildings_Block", "Tube", "Primitive_Cylander",
+        "Primitive_Cylander",   // 뭉툭한 원기둥 — 나무 밑동처럼 보이는 것
+        "Tube",
+        "Small Car",
+        "Crate",
     };
+
+    [SerializeField] private Color _jumpableColor = new Color(0.29f, 0.85f, 0.44f);   // 초록 = 넘어라
+    [SerializeField] private Color _blockingColor = new Color(0.95f, 0.27f, 0.33f);   // 빨강 = 피해라
 
     private MaterialPropertyBlock _mpb;
 
@@ -52,31 +65,67 @@ public class ObstaclePool : MonoBehaviour
     private void ApplyObstacleTuning()
     {
         _mpb = new MaterialPropertyBlock();
+
+        float clearance = ResolveJumpClearance();
+        float lowTarget = Mathf.Max(0.2f, clearance - _lowObstacleMargin);
+
         foreach (var obstacle in _nonSurmountableObstacles)
         {
             if (obstacle == null) continue;
-            bool low = IsLowObstacle(obstacle.name);
-            ResizeToTop(obstacle, low);
-            Tint(obstacle, low ? _lowObstacleColor : _tallObstacleColor);
+
+            if (_resizeObstacles)
+            {
+                float targetTop = MatchesJumpableName(obstacle.name)
+                    ? lowTarget
+                    : Mathf.Max(MeasureTopY(obstacle), _tallObstacleMinTopY);
+                ResizeToTop(obstacle, targetTop);
+            }
+
+            // 색은 최종 실측 높이로 정한다 — 크기 조정이 꺼져 있거나 어떤 이유로
+            // 조정이 안 먹었더라도 색이 거짓말하지 않게.
+            bool jumpable = MeasureTopY(obstacle) <= clearance;
+            Tint(obstacle, jumpable ? _jumpableColor : _blockingColor);
+        }
+
+        // 계단은 애초에 데미지가 없고 뛰어 올라가는 지형이라 넘어가는 쪽으로 칠한다.
+        foreach (var stairs in _surmountableObstacles)
+        {
+            if (stairs != null) Tint(stairs, _jumpableColor);
         }
     }
 
-    private static bool IsLowObstacle(string name)
+    /// <summary>점프로 넘을 수 있는 윗면 높이의 기준선(m).</summary>
+    private float ResolveJumpClearance()
     {
-        foreach (var prefix in LowObstacleNames)
+        var player = FindObjectOfType<PlayerController>();
+        float baseline = player != null ? player.JumpClearanceHeight : _fallbackClearance;
+        return baseline + _extraClearance;
+    }
+
+    private bool MatchesJumpableName(string name)
+    {
+        if (_jumpableObstacleNames == null) return false;
+        foreach (var prefix in _jumpableObstacleNames)
         {
-            if (name.StartsWith(prefix)) return true;
+            if (!string.IsNullOrEmpty(prefix) && name.StartsWith(prefix)) return true;
         }
         return false;
     }
 
+    /// <summary>장애물 윗면의 높이(m). 바닥 기준.</summary>
+    private static float MeasureTopY(GameObject obstacle)
+    {
+        if (!TryGetLocalBoundsY(obstacle, out float localMin, out float localMax)) return 0f;
+        var tr = obstacle.transform;
+        return tr.localPosition.y + localMax * tr.localScale.y;
+    }
+
     /// <summary>
-    /// 장애물의 윗면 높이를 목표치에 맞춰 Y 스케일을 조정한다.
-    /// 풀에 있는 장애물은 비활성 상태라 Renderer/Collider.bounds(월드 AABB)를
-    /// 읽을 수 없다. 메시의 로컬 bounds는 에셋 데이터라 활성 여부와 무관하므로
-    /// 그쪽을 쓴다.
+    /// 윗면 높이를 목표치에 맞춰 Y 스케일을 조정한다.
+    /// 높이는 반드시 바닥 기준으로 잰다 — 이 장애물들은 피벗이 0~1.25로 제각각이라
+    /// 피벗 기준으로 재면 엉뚱한 값이 나온다.
     /// </summary>
-    private void ResizeToTop(GameObject obstacle, bool low)
+    private void ResizeToTop(GameObject obstacle, float targetTop)
     {
         if (!TryGetLocalBoundsY(obstacle, out float localMin, out float localMax)) return;
 
@@ -85,13 +134,9 @@ public class ObstaclePool : MonoBehaviour
 
         var tr = obstacle.transform;
         float scaleY = tr.localScale.y;
-
-        // 높이는 반드시 "바닥 기준"으로 잰다. 이 장애물들은 피벗이 제각각이라
-        // (바닥에 있는 것도, 중심에 있는 것도 있다) 피벗 기준으로 재면 엉뚱해진다.
-        float baseY = tr.localPosition.y + localMin * scaleY;
+        float baseY = tr.localPosition.y + localMin * scaleY;   // 밑면(보통 바닥)
         float currentTop = baseY + height * scaleY;
 
-        float targetTop = low ? _lowObstacleTopY : Mathf.Max(currentTop, _tallObstacleMinTopY);
         if (Mathf.Approximately(currentTop, targetTop)) return;
 
         float newScaleY = (targetTop - baseY) / height;
@@ -104,7 +149,11 @@ public class ObstaclePool : MonoBehaviour
         tr.localPosition = pos;
     }
 
-    /// <summary>자식 메시까지 포함한 로컬 Y 범위(루트 스케일은 빠진 값).</summary>
+    /// <summary>
+    /// 자식 메시까지 포함한 로컬 Y 범위(루트 스케일은 빠진 값).
+    /// 풀에 든 장애물은 비활성이라 Renderer/Collider.bounds 를 못 읽는다.
+    /// 메시의 로컬 bounds 는 에셋 데이터라 활성 여부와 무관하다.
+    /// </summary>
     private static bool TryGetLocalBoundsY(GameObject obstacle, out float minY, out float maxY)
     {
         minY = float.MaxValue;
@@ -116,7 +165,6 @@ public class ObstaclePool : MonoBehaviour
         {
             if (mf.sharedMesh == null) continue;
             var b = mf.sharedMesh.bounds;
-            // 자식 메시를 루트의 로컬 좌표계로 옮긴다(루트 스케일은 제외된다).
             Matrix4x4 toRoot = root.worldToLocalMatrix * mf.transform.localToWorldMatrix;
             for (int i = 0; i < 8; i++)
             {
